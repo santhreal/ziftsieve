@@ -1,0 +1,31 @@
+[package]
+name = "ziftsieve-fuzz"
+version = "0.0.0"
+edition = "2021"
+repository = "https://github.com/santhsecurity/Santh"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+ziftsieve = { path = ".." }
+
+[[bin]]
+name = "fuzz_gzip"
+path = "fuzz_targets/fuzz_gzip.rs"
+
+[[bin]]
+name = "fuzz_lz4"
+path = "fuzz_targets/fuzz_lz4.rs"
+
+[[bin]]
+name = "fuzz_snappy"
+path = "fuzz_targets/fuzz_snappy.rs"
+
+[[bin]]
+name = "fuzz_detect"
+path = "fuzz_targets/fuzz_detect.rs"
+
+[workspace]
