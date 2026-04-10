@@ -252,7 +252,7 @@ fn audit_index_estimated_fpr() {
     println!("Index estimated FPR: {:.4}", fpr);
 
     // FPR should be reasonable
-    assert!(fpr >= 0.0 && fpr < 1.0);
+    assert!((0.0..1.0).contains(&fpr));
 }
 
 #[test]
@@ -357,7 +357,7 @@ fn audit_fpr_with_log_patterns() {
     // Simulate log file patterns
     let mut bloom = BloomFilter::new(5000, 0.01);
 
-    let log_patterns = vec![
+    let log_patterns = [
         "ERROR: Connection failed",
         "WARN: High memory usage",
         "INFO: Request processed",

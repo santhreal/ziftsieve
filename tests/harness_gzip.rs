@@ -52,6 +52,7 @@ fn is_subsequence(haystack: &[u8], needle: &[u8]) -> bool {
 
 fn manual_two_block_gzip(blocks: &[&[u8]]) -> Vec<u8> {
     let mut out = vec![0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    let mut crc_hasher = crc32fast::Hasher::new();
     for (idx, block) in blocks.iter().enumerate() {
         assert!(block.len() <= u16::MAX as usize);
         let bfinal = if idx + 1 == blocks.len() { 1u8 } else { 0u8 };
@@ -61,8 +62,9 @@ fn manual_two_block_gzip(blocks: &[&[u8]]) -> Vec<u8> {
         out.extend_from_slice(&len.to_le_bytes());
         out.extend_from_slice(&nlen.to_le_bytes());
         out.extend_from_slice(block);
+        crc_hasher.update(block);
     }
-    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&crc_hasher.finalize().to_le_bytes());
     let isize = blocks
         .iter()
         .fold(0u64, |acc, block| acc.saturating_add(block.len() as u64));

@@ -75,11 +75,11 @@ mod snappy_tests {
     use super::*;
 
     #[test]
-    fn snappy_empty_input() {
-        let blocks = extract_from_bytes(CompressionFormat::Snappy, b"").unwrap();
+    fn snappy_empty_input_rejected() {
+        let result = extract_from_bytes(CompressionFormat::Snappy, b"");
         assert!(
-            blocks.is_empty(),
-            "empty snappy input should yield no blocks"
+            matches!(result, Err(ziftsieve::ZiftError::InvalidData { .. })),
+            "empty snappy input should be rejected"
         );
     }
 

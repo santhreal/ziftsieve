@@ -38,6 +38,6 @@ proptest! {
     fn test_property_block_literal_density(compressed_len in 0..1_000_000_u32) {
         let block = CompressedBlock::new(0, compressed_len);
         let density = block.literal_density();
-        assert!(density >= 0.0 && density <= 1.0);
+        assert!((0.0..=1.0).contains(&density));
     }
 }

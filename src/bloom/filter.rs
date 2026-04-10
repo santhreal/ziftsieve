@@ -5,6 +5,9 @@ use bit_vec::BitVec;
 use super::hash::{hash_pair, nth_hash};
 use crate::ZiftError;
 
+/// Maximum number of bits allowed in a bloom filter to prevent OOM.
+const MAX_BLOOM_BITS: usize = 1 << 30;
+
 /// Bloom filter for approximate membership checks over byte slices.
 #[derive(Debug, Clone)]
 pub struct BloomFilter {
@@ -52,14 +55,14 @@ impl BloomFilter {
 
         // Optimal number of bits: m = -n * ln(p) / ln(2)^2
         let m_f64 = (-n * p.ln() / (2.0_f64.ln().powi(2))).ceil();
-        let m = (if m_f64 > usize::MAX as f64 {
-            usize::MAX
+        let m = (if m_f64 > MAX_BLOOM_BITS as f64 {
+            MAX_BLOOM_BITS
         } else {
             #[allow(clippy::cast_possible_truncation)]
             let val = m_f64 as usize;
             val
         })
-        .max(64); // Minimum 64 bits
+        .clamp(64, MAX_BLOOM_BITS); // Clamp to safe range
 
         // Optimal number of hash functions: k = m/n * ln(2)
         let k_f64 = ((m as f64 / n) * 2.0_f64.ln()).round();
@@ -98,6 +101,7 @@ impl BloomFilter {
     /// ```
     #[must_use]
     pub fn with_params(num_bits: usize, num_hashes: u32) -> Self {
+        let num_bits = num_bits.clamp(1, MAX_BLOOM_BITS);
         Self {
             bits: BitVec::from_elem(num_bits, false),
             num_hashes: num_hashes.clamp(1, 32),
@@ -278,7 +282,7 @@ impl BloomFilter {
         if num_bits == 0 {
             return Err(ZiftError::InvalidData {
                 offset: 0,
-                reason: "BloomFilter requires at least 1 bit".to_string(),
+                reason: "BloomFilter requires at least 1 bit. Fix: pass a non-empty bit vector".to_string(),
             });
         }
         Ok(Self {

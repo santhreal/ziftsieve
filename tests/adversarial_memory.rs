@@ -24,7 +24,7 @@ fn test_gzip_memory_limit() {
 #[test]
 #[cfg(feature = "snappy")]
 fn test_snappy_memory_limit() {
-    let mut data = vec![
+    let data = vec![
         0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59, // Stream ID
     ];
     let builder =

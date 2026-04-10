@@ -98,13 +98,12 @@ fn test_builder_massive_input() {
     let massive_data = vec![0u8; 2 * 1024 * 1024];
     let result = builder.build_from_bytes(&massive_data);
     // Should not panic or OOM — either returns Ok(empty) or Err.
-    match result {
-        Ok(index) => assert_eq!(
+    if let Ok(index) = result {
+        assert_eq!(
             index.block_count(),
             0,
             "zero-filled data should produce empty index"
-        ),
-        Err(_) => {} // Also acceptable
+        );
     }
 }
 
@@ -129,9 +128,8 @@ fn test_builder_truncated_lz4() {
     let truncated = vec![0x04, 0x22, 0x4D];
     let result = builder.build_from_bytes(&truncated);
     // Should not panic. Either empty index or error, both acceptable.
-    match result {
-        Ok(index) => assert_eq!(index.block_count(), 0),
-        Err(_) => {}
+    if let Ok(index) = result {
+        assert_eq!(index.block_count(), 0);
     }
 }
 
@@ -267,8 +265,8 @@ fn test_index_bloom_stats_empty() {
 #[test]
 
 fn test_index_bloom_stats_zero_division() {
-    let mut builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
-    let builder2 = builder.bloom_hashes(0);
+    let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
+    let _builder2 = builder.bloom_hashes(0);
     // Actually we can't create one with 0 hashes since with_params clamps to 1
     // But let's assert the clamping to ensure no zero division
     let bf = BloomFilter::with_params(100, 0);
@@ -277,7 +275,7 @@ fn test_index_bloom_stats_zero_division() {
 
 #[test]
 fn test_index_estimated_fpr_empty() {
-    let mut builder = StreamingIndexBuilder::new(CompressionFormat::Lz4);
+    let builder = StreamingIndexBuilder::new(CompressionFormat::Lz4);
     let index = builder.finalize().unwrap();
     let fpr = index.estimated_fpr(100);
     assert_eq!(fpr, 0.0);
@@ -288,7 +286,7 @@ fn test_scan_tarball_depth_limit() {
     #[cfg(feature = "gzip")]
     {
         #[cfg(feature = "gzip")]
-        use ziftsieve::scan_tarball_literals;
+    use ziftsieve::scan_tarball_literals;
         // The implementation doesn't expose depth parsing publicly easily,
         // so we assert scanning empty returns error instead of passing
         let res = scan_tarball_literals(b"");
@@ -301,7 +299,7 @@ fn test_scan_tarball_symlink_rejection() {
     #[cfg(feature = "gzip")]
     {
         #[cfg(feature = "gzip")]
-        use ziftsieve::scan_tarball_literals;
+    use ziftsieve::scan_tarball_literals;
         // Test that sending invalid string to symlink scan returns error
         let res = scan_tarball_literals(b"invalid_symlink_data");
         assert!(res.is_err());
@@ -361,7 +359,9 @@ fn test_index_pattern_might_contain_false_negative_explicit() {
     );
 }
 
+
 // --- ADDED ADVERSARIAL TESTS ---
+
 
 #[test]
 fn test_detect_nested_gzip_in_gzip() {
@@ -405,7 +405,7 @@ fn test_detect_nested_snappy_in_gzip() {
 fn test_detect_nested_gzip_in_lz4() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
     let mut data = vec![0x04, 0x22, 0x4D, 0x18];
-    data.extend_from_slice(&[0x1f, 0x8b]);
+    data.extend_from_slice(&[0x1f, 0x8b]); 
     let result = builder.build_from_bytes(&data);
     assert!(result.is_err());
 }
@@ -471,9 +471,8 @@ fn test_maximally_compressible_input_all_zeros_lz4() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
     let data = vec![0u8; 10000];
     let result = builder.build_from_bytes(&data);
-    match result {
-        Ok(idx) => assert_eq!(idx.block_count(), 0),
-        Err(_) => {}
+    if let Ok(idx) = result {
+        assert_eq!(idx.block_count(), 0);
     }
 }
 
@@ -527,74 +526,47 @@ fn test_maximally_incompressible_random_bytes_zstd() {
 
 #[test]
 fn test_identify_gzip_magic_exact() {
-    assert_eq!(
-        CompressionFormat::detect(b"\x1f\x8b"),
-        Some(CompressionFormat::Gzip)
-    );
+    assert_eq!(CompressionFormat::detect(b"\x1f\x8b"), Some(CompressionFormat::Gzip));
 }
 
 #[test]
 fn test_identify_gzip_magic_padded() {
-    assert_eq!(
-        CompressionFormat::detect(b"\x1f\x8b\x00\x00"),
-        Some(CompressionFormat::Gzip)
-    );
+    assert_eq!(CompressionFormat::detect(b"\x1f\x8b\x00\x00"), Some(CompressionFormat::Gzip));
 }
 
 #[test]
 fn test_identify_lz4_magic_exact() {
-    assert_eq!(
-        CompressionFormat::detect(b"\x04\x22\x4d\x18"),
-        Some(CompressionFormat::Lz4)
-    );
+    assert_eq!(CompressionFormat::detect(b"\x04\x22\x4d\x18"), Some(CompressionFormat::Lz4));
 }
 
 #[test]
 fn test_identify_lz4_legacy_magic_exact() {
-    assert_eq!(
-        CompressionFormat::detect(b"\x02\x21\x4c\x18"),
-        Some(CompressionFormat::Lz4)
-    );
+    assert_eq!(CompressionFormat::detect(b"\x02\x21\x4c\x18"), Some(CompressionFormat::Lz4));
 }
 
 #[test]
 fn test_identify_lz4_magic_padded() {
-    assert_eq!(
-        CompressionFormat::detect(b"\x04\x22\x4d\x18\x00\x00"),
-        Some(CompressionFormat::Lz4)
-    );
+    assert_eq!(CompressionFormat::detect(b"\x04\x22\x4d\x18\x00\x00"), Some(CompressionFormat::Lz4));
 }
 
 #[test]
 fn test_identify_zstd_magic_exact() {
-    assert_eq!(
-        CompressionFormat::detect(b"\x28\xb5\x2f\xfd"),
-        Some(CompressionFormat::Zstd)
-    );
+    assert_eq!(CompressionFormat::detect(b"\x28\xb5\x2f\xfd"), Some(CompressionFormat::Zstd));
 }
 
 #[test]
 fn test_identify_zstd_magic_padded() {
-    assert_eq!(
-        CompressionFormat::detect(b"\x28\xb5\x2f\xfd\x00\x00"),
-        Some(CompressionFormat::Zstd)
-    );
+    assert_eq!(CompressionFormat::detect(b"\x28\xb5\x2f\xfd\x00\x00"), Some(CompressionFormat::Zstd));
 }
 
 #[test]
 fn test_identify_snappy_magic_exact() {
-    assert_eq!(
-        CompressionFormat::detect(b"\xff\x06\x00\x00\x73\x4e\x61\x50\x70\x59"),
-        Some(CompressionFormat::Snappy)
-    );
+    assert_eq!(CompressionFormat::detect(b"\xff\x06\x00\x00\x73\x4e\x61\x50\x70\x59"), Some(CompressionFormat::Snappy));
 }
 
 #[test]
 fn test_identify_snappy_magic_padded() {
-    assert_eq!(
-        CompressionFormat::detect(b"\xff\x06\x00\x00\x73\x4e\x61\x50\x70\x59\x00\x00"),
-        Some(CompressionFormat::Snappy)
-    );
+    assert_eq!(CompressionFormat::detect(b"\xff\x06\x00\x00\x73\x4e\x61\x50\x70\x59\x00\x00"), Some(CompressionFormat::Snappy));
 }
 
 #[test]
@@ -629,10 +601,7 @@ fn test_identify_partial_lz4_magic() {
 
 #[test]
 fn test_identify_partial_snappy_magic() {
-    assert_eq!(
-        CompressionFormat::detect(b"\xff\x06\x00\x00\x73\x4e\x61\x50\x70"),
-        None
-    );
+    assert_eq!(CompressionFormat::detect(b"\xff\x06\x00\x00\x73\x4e\x61\x50\x70"), None);
 }
 
 // Additional tests to reach 33+ new ones
@@ -641,7 +610,7 @@ fn test_identify_partial_snappy_magic() {
 fn test_detect_nested_gzip_in_snappy() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Snappy);
     let mut data = vec![0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59];
-    data.extend_from_slice(&[0x1f, 0x8b, 0x08]);
+    data.extend_from_slice(&[0x1f, 0x8b, 0x08]); 
     let result = builder.build_from_bytes(&data);
     assert!(result.is_err());
 }
@@ -650,7 +619,7 @@ fn test_detect_nested_gzip_in_snappy() {
 fn test_detect_nested_lz4_in_snappy() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Snappy);
     let mut data = vec![0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59];
-    data.extend_from_slice(&[0x04, 0x22, 0x4d, 0x18]);
+    data.extend_from_slice(&[0x04, 0x22, 0x4d, 0x18]); 
     let result = builder.build_from_bytes(&data);
     assert!(result.is_err());
 }
@@ -659,7 +628,7 @@ fn test_detect_nested_lz4_in_snappy() {
 fn test_detect_nested_zstd_in_snappy() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Snappy);
     let mut data = vec![0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59];
-    data.extend_from_slice(&[0x28, 0xb5, 0x2f, 0xfd]);
+    data.extend_from_slice(&[0x28, 0xb5, 0x2f, 0xfd]); 
     let result = builder.build_from_bytes(&data);
     assert!(result.is_err());
 }
@@ -668,7 +637,7 @@ fn test_detect_nested_zstd_in_snappy() {
 fn test_detect_nested_snappy_in_lz4() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
     let mut data = vec![0x04, 0x22, 0x4D, 0x18];
-    data.extend_from_slice(&[0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59]);
+    data.extend_from_slice(&[0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59]); 
     let result = builder.build_from_bytes(&data);
     assert!(result.is_err());
 }
@@ -677,7 +646,7 @@ fn test_detect_nested_snappy_in_lz4() {
 fn test_detect_nested_zstd_in_lz4() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
     let mut data = vec![0x04, 0x22, 0x4D, 0x18];
-    data.extend_from_slice(&[0x28, 0xb5, 0x2f, 0xfd]);
+    data.extend_from_slice(&[0x28, 0xb5, 0x2f, 0xfd]); 
     let result = builder.build_from_bytes(&data);
     assert!(result.is_err());
 }
@@ -686,7 +655,7 @@ fn test_detect_nested_zstd_in_lz4() {
 fn test_detect_nested_lz4_in_lz4() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
     let mut data = vec![0x04, 0x22, 0x4D, 0x18];
-    data.extend_from_slice(&[0x04, 0x22, 0x4D, 0x18]);
+    data.extend_from_slice(&[0x04, 0x22, 0x4D, 0x18]); 
     let result = builder.build_from_bytes(&data);
     assert!(result.is_err());
 }
@@ -694,32 +663,31 @@ fn test_detect_nested_lz4_in_lz4() {
 #[test]
 fn test_detect_compression_ratio_accuracy_detect_from_buffer() {
     let data = vec![0x1f, 0x8b, 0x08];
-    assert_eq!(
-        CompressionFormat::detect(&data),
-        Some(CompressionFormat::Gzip)
-    );
+    assert_eq!(CompressionFormat::detect(&data), Some(CompressionFormat::Gzip));
 }
+
 
 #[test]
 fn test_compression_ratio_accuracy_detect_from_lz4() {
     // A valid LZ4 raw block where we know the uncompressed size and literals.
     // The `CompressedBlock` struct is returned by `extract_from_bytes`.
     use ziftsieve::{extract_from_bytes, CompressionFormat};
-
+    
     // We can use an invalid frame to see if it defaults to 1.0 (empty literals, none uncompressed)
-    let blocks =
-        extract_from_bytes(CompressionFormat::Lz4, &[0x04, 0x22, 0x4D, 0x18]).unwrap_or_default();
+    let blocks = extract_from_bytes(CompressionFormat::Lz4, &[0x04, 0x22, 0x4D, 0x18]).unwrap_or_default();
     if let Some(b) = blocks.first() {
         assert_eq!(b.literal_density(), 1.0);
     }
 }
 
+
+
 #[test]
 #[cfg(feature = "gzip")]
 fn test_compression_ratio_accuracy_with_flate2() {
+    use std::io::Write;
     use flate2::write::GzEncoder;
     use flate2::Compression;
-    use std::io::Write;
     #[cfg(feature = "gzip")]
     use ziftsieve::scan_tarball_literals;
 
@@ -756,7 +724,7 @@ fn test_compression_ratio_accuracy_with_flate2() {
 
     let blocks = scan_tarball_literals(&gz_data).expect("Should extract valid tarball");
     assert_eq!(blocks.len(), 1);
-
+    
     // Test literal density (should be exactly 100/100 = 1.0)
     let density = blocks[0].literal_density();
     assert!((density - 1.0).abs() < f64::EPSILON);

@@ -117,9 +117,19 @@ fn zip_bomb_nested_depth_limit_enforced() {
 
     // Depth at limit should work
     let at_limit = create_nested_tarball(MAX_NESTED_DEPTH);
-    let _result = scan_tarball_literals(&at_limit);
-    // Note: This tests the depth limit enforcement in the API
-    // The depth tracking is internal and depth-limited calls are not exposed directly
+    let result = scan_tarball_literals(&at_limit);
+    assert!(result.is_ok(), "Depth at limit should be allowed");
+
+    // Depth beyond limit must be rejected
+    let beyond_limit = create_nested_tarball(MAX_NESTED_DEPTH + 1);
+    let result = scan_tarball_literals(&beyond_limit);
+    assert!(result.is_err(), "Depth beyond limit should be rejected");
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(
+        err_msg.contains("nested archive depth exceeds limit"),
+        "Error should mention depth limit: {}",
+        err_msg
+    );
 }
 
 #[test]
@@ -477,3 +487,5 @@ fn very_long_filename_rejected() {
         Ok(_) | Err(_) => {}
     }
 }
+
+

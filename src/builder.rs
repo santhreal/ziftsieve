@@ -118,6 +118,9 @@ impl CompressedIndexBuilder {
     }
 }
 
+/// Maximum number of blocks a streaming builder may accumulate to prevent OOM.
+const MAX_STREAMING_BLOCKS: usize = 1_000_000;
+
 /// Incremental builder for indexing compressed data larger than memory.
 pub struct StreamingIndexBuilder {
     format: CompressionFormat,
@@ -162,6 +165,12 @@ impl StreamingIndexBuilder {
     /// Returns `ZiftError` if parsing fails.
     pub fn process_chunk(&mut self, chunk: &[u8]) -> Result<(), ZiftError> {
         let new_blocks = extract::extract_from_bytes(self.format, chunk)?;
+        if self.blocks.len().saturating_add(new_blocks.len()) > MAX_STREAMING_BLOCKS {
+            return Err(ZiftError::BlockTooLarge {
+                size: self.blocks.len().saturating_add(new_blocks.len()),
+                max: MAX_STREAMING_BLOCKS,
+            });
+        }
         for block in new_blocks {
             let bwb = self.build_block_with_bloom(block);
             self.blocks.push(bwb);

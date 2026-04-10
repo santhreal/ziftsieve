@@ -33,6 +33,9 @@ const MAX_TAR_MEMBERS: usize = 8_192;
 #[derive(Debug, Clone)]
 pub struct CompressedBlock {
     /// Offset in the compressed stream.
+    ///
+    /// For blocks returned by tarball scanning, this offset refers to the
+    /// decompressed tar archive rather than the original gzip stream.
     pub(crate) compressed_offset: u64,
     /// Length in the compressed stream.
     pub(crate) compressed_len: u32,
@@ -219,7 +222,7 @@ fn parse_tar_octal_usize(data: &[u8], offset: usize) -> Result<usize, ZiftError>
         if !(b'0'..=b'7').contains(&byte) {
             return Err(ZiftError::InvalidData {
                 offset,
-                reason: "invalid octal digit in tar header".to_string(),
+                reason: "invalid octal digit in tar header. Fix: use a valid tar archive".to_string(),
             });
         }
 
@@ -230,7 +233,7 @@ fn parse_tar_octal_usize(data: &[u8], offset: usize) -> Result<usize, ZiftError>
             .and_then(|v| v.checked_add(digit))
             .ok_or_else(|| ZiftError::InvalidData {
                 offset,
-                reason: "tar member size overflows usize".to_string(),
+                reason: "tar member size overflows usize. Fix: use a smaller tar archive".to_string(),
             })?;
     }
 
@@ -262,6 +265,8 @@ fn is_hardlink(typeflag: u8) -> bool {
 /// Maximum depth for nested archive scanning (zip bomb protection).
 #[cfg(feature = "gzip")]
 const MAX_NESTED_DEPTH: usize = 5;
+
+
 
 /// Checks if a tar entry name contains path traversal sequences.
 /// Rejects: .. / ../ /.. /path/../other /.. /.
@@ -296,14 +301,14 @@ fn next_member_offset(offset: usize, content_size: usize) -> Result<usize, ZiftE
         .checked_add(TAR_BLOCK_SIZE)
         .ok_or_else(|| ZiftError::InvalidData {
             offset,
-            reason: "tar member boundary overflows usize".to_string(),
+            reason: "tar member boundary overflows usize. Fix: use a smaller tar archive".to_string(),
         })?;
 
     content_end
         .checked_add(padded_size)
         .ok_or_else(|| ZiftError::InvalidData {
             offset,
-            reason: "tar member boundary overflows usize".to_string(),
+            reason: "tar member boundary overflows usize. Fix: use a smaller tar archive".to_string(),
         })
 }
 
@@ -313,13 +318,13 @@ fn read_tar_member(content: &[u8], start: usize, offset: usize) -> Result<TarHea
         .checked_add(TAR_BLOCK_SIZE)
         .ok_or_else(|| ZiftError::InvalidData {
             offset,
-            reason: "tar header boundary overflows usize".to_string(),
+            reason: "tar header boundary overflows usize. Fix: use a smaller tar archive".to_string(),
         })?;
 
     if header_end > content.len() {
         return Err(ZiftError::InvalidData {
             offset,
-            reason: "truncated tar member header".to_string(),
+            reason: "truncated tar member header. Fix: use a complete tar archive".to_string(),
         });
     }
 
@@ -327,7 +332,7 @@ fn read_tar_member(content: &[u8], start: usize, offset: usize) -> Result<TarHea
     if is_end_of_archive_block(header) {
         return Err(ZiftError::InvalidData {
             offset,
-            reason: "end of tar archive marker".to_string(),
+            reason: "end of tar archive marker. Fix: use a valid tar archive".to_string(),
         });
     }
 
@@ -343,7 +348,7 @@ fn read_tar_member(content: &[u8], start: usize, offset: usize) -> Result<TarHea
     if contains_path_traversal(&name) {
         return Err(ZiftError::InvalidData {
             offset,
-            reason: format!("tar entry name contains path traversal: {name}"),
+            reason: format!("tar entry name contains path traversal: {name}. Fix: remove '..' sequences from tar entry names"),
         });
     }
 
@@ -352,13 +357,13 @@ fn read_tar_member(content: &[u8], start: usize, offset: usize) -> Result<TarHea
         .checked_add(size)
         .ok_or_else(|| ZiftError::InvalidData {
             offset,
-            reason: "tar member content boundary overflows usize".to_string(),
+            reason: "tar member content boundary overflows usize. Fix: use a smaller tar archive".to_string(),
         })?;
 
     if content_end > content.len() {
         return Err(ZiftError::InvalidData {
             offset,
-            reason: "truncated tar member content".to_string(),
+            reason: "truncated tar member content. Fix: use a complete tar archive".to_string(),
         });
     }
 
@@ -389,13 +394,13 @@ fn decompress_gzip_members(data: &[u8]) -> Result<Vec<u8>, ZiftError> {
             .checked_add(read)
             .ok_or_else(|| ZiftError::InvalidData {
                 offset: data.len(),
-                reason: "decompressed tarball size overflows usize".to_string(),
+                reason: "decompressed tarball size overflows usize. Fix: use a smaller tarball".to_string(),
             })?;
 
         if new_len > MAX_TARBALL_BYTES {
             return Err(ZiftError::InvalidData {
                 offset: data.len(),
-                reason: format!("decompressed tarball size exceeds {MAX_TARBALL_BYTES}-byte limit"),
+                reason: format!("decompressed tarball size exceeds {MAX_TARBALL_BYTES}-byte limit. Fix: use a smaller tarball or increase MAX_TARBALL_BYTES"),
             });
         }
 
@@ -446,14 +451,14 @@ fn scan_tarball_literals_with_depth(
     if depth > MAX_NESTED_DEPTH {
         return Err(ZiftError::InvalidData {
             offset: 0,
-            reason: format!("nested archive depth exceeds limit ({MAX_NESTED_DEPTH})"),
+            reason: format!("nested archive depth exceeds limit ({MAX_NESTED_DEPTH}). Fix: use a flatter archive structure"),
         });
     }
 
     if data.len() < 2 || data.get(0..2) != Some(&[0x1f, 0x8b]) {
         return Err(ZiftError::InvalidData {
             offset: 0,
-            reason: "input is not a gzip stream for tarball scanning".to_string(),
+            reason: "input is not a gzip stream for tarball scanning. Fix: provide a gzip-compressed tar archive".to_string(),
         });
     }
 
@@ -471,14 +476,14 @@ fn scan_tarball_literals_with_depth(
         if members >= MAX_TAR_MEMBERS {
             return Err(ZiftError::InvalidData {
                 offset: pos,
-                reason: format!("tar archive contains too many members (max {MAX_TAR_MEMBERS})"),
+                reason: format!("tar archive contains too many members (max {MAX_TAR_MEMBERS}). Fix: use a smaller tar archive or increase MAX_TAR_MEMBERS"),
             });
         }
 
         if pos + TAR_BLOCK_SIZE > tar_data.len() {
             return Err(ZiftError::InvalidData {
                 offset: pos,
-                reason: "truncated tar header block".to_string(),
+                reason: "truncated tar header block. Fix: use a complete tar archive".to_string(),
             });
         }
 
@@ -494,7 +499,7 @@ fn scan_tarball_literals_with_depth(
             return Err(ZiftError::InvalidData {
                 offset: pos,
                 reason: format!(
-                    "tar entry '{}' is a symbolic link - symlinks are not supported for security",
+                    "tar entry '{}' is a symbolic link - symlinks are not supported for security. Fix: remove symlinks from the tar archive",
                     member.name
                 ),
             });
@@ -505,51 +510,25 @@ fn scan_tarball_literals_with_depth(
             return Err(ZiftError::InvalidData {
                 offset: pos,
                 reason: format!(
-                    "tar entry '{}' is a hard link - hardlinks are not supported for security",
+                    "tar entry '{}' is a hard link - hardlinks are not supported for security. Fix: remove hard links from the tar archive",
                     member.name
                 ),
             });
         }
 
-        if member.is_regular_file {
-            let literal_len = member.content_size;
-            if literal_len > u32::MAX as usize {
-                return Err(ZiftError::InvalidData {
-                    offset: pos,
-                    reason: "tar member size exceeds 4GiB limit".to_string(),
-                });
-            }
-
-            let mut block = CompressedBlock::new(
-                u64::try_from(pos).map_err(|_| ZiftError::InvalidData {
-                    offset: pos,
-                    reason: "tar member offset exceeds u64".to_string(),
-                })?,
-                u32::try_from(literal_len).map_err(|_| ZiftError::InvalidData {
-                    offset: pos,
-                    reason: "tar member size exceeds u32".to_string(),
-                })?,
-            );
-            let literals =
-                &tar_data[member.content_offset..member.content_offset + member.content_size];
-            block.literals.extend_from_slice(literals);
-            block.uncompressed_len =
-                Some(
-                    u32::try_from(member.content_size).map_err(|_| ZiftError::InvalidData {
-                        offset: pos,
-                        reason: "tar member size exceeds u32".to_string(),
-                    })?,
-                );
-            total_literals = total_literals.saturating_add(member.content_size);
-
-            blocks.push(block);
-
-            if total_literals > MAX_TARBALL_BYTES {
-                return Err(ZiftError::InvalidData {
-                    offset: pos,
-                    reason: format!("extracted tar literals exceed {MAX_TARBALL_BYTES}-byte limit"),
-                });
-            }
+        if member.is_regular_file
+            && add_regular_file_blocks(
+                &tar_data,
+                &member,
+                pos,
+                depth,
+                &mut blocks,
+                &mut total_literals,
+            )?
+        {
+            pos = next_member_offset(pos, member.content_size)?;
+            members += 1;
+            continue;
         }
 
         pos = next_member_offset(pos, member.content_size)?;
@@ -557,4 +536,84 @@ fn scan_tarball_literals_with_depth(
     }
 
     Ok(blocks)
+}
+
+#[cfg(feature = "gzip")]
+fn add_regular_file_blocks(
+    tar_data: &[u8],
+    member: &TarHeader,
+    pos: usize,
+    depth: usize,
+    blocks: &mut Vec<CompressedBlock>,
+    total_literals: &mut usize,
+) -> Result<bool, ZiftError> {
+    let literals = &tar_data[member.content_offset..member.content_offset + member.content_size];
+
+    // Attempt recursive scan for nested gzip tarballs
+    if !literals.is_empty() && literals.get(0..2) == Some(&[0x1f, 0x8b]) {
+        match scan_tarball_literals_with_depth(literals, depth + 1) {
+            Ok(nested) => {
+                let nested_literals: usize = nested.iter().map(|b| b.literals.len()).sum();
+                *total_literals = total_literals.saturating_add(nested_literals);
+                if *total_literals > MAX_TARBALL_BYTES {
+                    return Err(ZiftError::InvalidData {
+                        offset: pos,
+                        reason: format!(
+                            "extracted tar literals exceed {MAX_TARBALL_BYTES}-byte limit"
+                        ),
+                    });
+                }
+                blocks.extend(nested);
+                return Ok(true);
+            }
+            Err(ZiftError::InvalidData { offset, ref reason })
+                if reason.contains("nested archive depth exceeds limit") =>
+            {
+                return Err(ZiftError::InvalidData {
+                    offset,
+                    reason: reason.clone(),
+                });
+            }
+            Err(_) => {
+                // Not a valid nested tarball — fall through to regular file handling
+            }
+        }
+    }
+
+    let literal_len = member.content_size;
+    if literal_len > u32::MAX as usize {
+        return Err(ZiftError::InvalidData {
+            offset: pos,
+            reason: "tar member size exceeds 4GiB limit. Fix: use smaller tar members".to_string(),
+        });
+    }
+
+    let mut block = CompressedBlock::new(
+        u64::try_from(pos).map_err(|_| ZiftError::InvalidData {
+            offset: pos,
+            reason: "tar member offset exceeds u64. Fix: use a smaller tar archive".to_string(),
+        })?,
+        u32::try_from(literal_len).map_err(|_| ZiftError::InvalidData {
+            offset: pos,
+            reason: "tar member size exceeds u32. Fix: use smaller tar members".to_string(),
+        })?,
+    );
+    block.literals.extend_from_slice(literals);
+    block.uncompressed_len =
+        Some(u32::try_from(member.content_size).map_err(|_| ZiftError::InvalidData {
+            offset: pos,
+            reason: "tar member size exceeds u32. Fix: use smaller tar members".to_string(),
+        })?);
+    *total_literals = total_literals.saturating_add(member.content_size);
+
+    blocks.push(block);
+
+    if *total_literals > MAX_TARBALL_BYTES {
+        return Err(ZiftError::InvalidData {
+            offset: pos,
+            reason: format!("extracted tar literals exceed {MAX_TARBALL_BYTES}-byte limit. Fix: use a smaller tarball or increase MAX_TARBALL_BYTES"),
+        });
+    }
+
+    Ok(false)
 }

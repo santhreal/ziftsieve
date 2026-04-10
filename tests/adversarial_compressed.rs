@@ -1402,14 +1402,17 @@ fn adversarial_snappy_reserved_chunks() {
     data.extend_from_slice(&[0x04, 0x00, 0x00]); // Length = 4
     data.extend_from_slice(b"test"); // Chunk data
 
-    // Should handle without panic
-    let index = CompressedIndexBuilder::new(CompressionFormat::Snappy)
-        .build_from_bytes(&data)
-        .expect("Should handle without panic");
-    assert_eq!(
-        index.block_count(),
-        0,
-        "No blocks should be extracted from reserved chunks"
+    // Should reject reserved unskippable chunks per Snappy framing spec
+    let result = CompressedIndexBuilder::new(CompressionFormat::Snappy).build_from_bytes(&data);
+    assert!(
+        result.is_err(),
+        "Reserved unskippable chunks should be rejected"
+    );
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(
+        err_msg.contains("reserved unskippable"),
+        "Error should mention reserved chunk: {}",
+        err_msg
     );
 }
 
