@@ -2,7 +2,7 @@
 //!
 //! Tests that all claimed formats (LZ4, gzip, snappy, zstd) work as documented.
 
-use std::io::{Read, Write};
+use std::io::Write;
 use ziftsieve::{extract_from_bytes, CompressedIndexBuilder, CompressionFormat};
 
 // ============================================================================
@@ -107,11 +107,8 @@ fn audit_lz4_block_size_boundary() {
     let index = CompressedIndexBuilder::new(CompressionFormat::Lz4).build_from_bytes(&compressed);
 
     // Should succeed or fail gracefully, not panic
-    match index {
-        Ok(idx) => {
-            let _ = idx.block_count();
-        }
-        Err(_) => {} // Error is acceptable for boundary
+    if let Ok(idx) = index {
+        let _ = idx.block_count();
     }
 }
 
@@ -578,18 +575,45 @@ fn audit_snappy_uncompressed_chunk() {
 
 #[test]
 #[cfg(feature = "snappy")]
-fn audit_snappy_rejects_compressed_chunk() {
-    // Compressed chunk type 0x00 should be rejected
+fn audit_snappy_rejects_invalid_compressed_chunk() {
+    // Invalid compressed chunk (truncated snappy block) should be rejected
     let mut data = vec![
         0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59, // Stream ID
     ];
     data.push(0x00); // Compressed chunk type
-    data.extend_from_slice(&[0x05, 0x00, 0x00]); // Length 5
-    data.extend_from_slice(&[0x00; 5]); // Dummy data
+    data.extend_from_slice(&[0x05, 0x00, 0x00]); // Length 5 (4-byte CRC + 1 byte payload)
+    data.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x01]); // CRC + truncated payload
 
     let result = extract_from_bytes(CompressionFormat::Snappy, &data);
+    assert!(result.is_err(), "Should reject invalid compressed chunks");
+}
 
-    assert!(result.is_err(), "Should reject compressed chunks");
+#[test]
+#[cfg(feature = "snappy")]
+fn audit_snappy_accepts_valid_compressed_chunk() {
+    // Valid compressed chunk should be decompressed and literals extracted
+    let payload = b"snappy compressed";
+    let compressed = snap::raw::Encoder::new()
+        .compress_vec(payload)
+        .expect("snap compress");
+    let crc = 0u32;
+    let chunk_len = (compressed.len() + 4) as u32;
+
+    let mut data = vec![
+        0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59, // Stream ID
+    ];
+    data.push(0x00); // Compressed chunk type
+    data.extend_from_slice(&chunk_len.to_le_bytes()[..3]);
+    data.extend_from_slice(&crc.to_le_bytes());
+    data.extend_from_slice(&compressed);
+
+    let blocks = extract_from_bytes(CompressionFormat::Snappy, &data)
+        .expect("Should accept valid compressed chunk");
+    let literals: Vec<u8> = blocks
+        .iter()
+        .flat_map(|b| b.literals().iter().copied())
+        .collect();
+    assert_eq!(&literals, payload);
 }
 
 #[test]

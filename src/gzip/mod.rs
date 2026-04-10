@@ -43,6 +43,12 @@ pub(crate) const MAX_TOTAL_LITERALS: usize = 256 * 1024 * 1024; // 256 MB
 /// Returns `ZiftError::InvalidData` if the stream is truncated or malformed, or
 /// `ZiftError::BlockTooLarge` if the extracted literals exceed memory limits.
 pub fn extract_literals(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> {
+    if data.is_empty() {
+        return Err(ZiftError::InvalidData {
+            offset: 0,
+            reason: "empty gzip input. Fix: provide non-empty compressed data".to_string(),
+        });
+    }
     let mut reader = BitReader::new(data, 0);
     let mut blocks = Vec::new();
 
@@ -55,7 +61,7 @@ pub fn extract_literals(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> 
         if members >= 1024 {
             return Err(ZiftError::InvalidData {
                 offset: reader.byte_pos,
-                reason: "too many gzip members, likely malformed input".to_string(),
+                reason: "too many gzip members, likely malformed input. Fix: use a valid gzip stream".to_string(),
             });
         }
     }

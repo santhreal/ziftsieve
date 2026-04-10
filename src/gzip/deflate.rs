@@ -6,6 +6,8 @@ use crate::{CompressedBlock, ZiftError};
 pub(crate) const DEFLATE_MAX_BITS: usize = 15;
 pub(crate) const MAX_BLOCK_LITERALS: usize = 16 * 1024 * 1024; // 16 MiB per compressed block.
 pub(crate) const MAX_DEFLATE_BLOCKS_PER_MEMBER: usize = 100_000;
+/// Maximum number of DEFLATE instructions per block to prevent CPU exhaustion.
+pub(crate) const MAX_DEFLATE_INSTRUCTIONS: usize = 10_000_000;
 
 pub(crate) const HCLEN_ORDER: [usize; 19] = [
     16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
@@ -88,7 +90,7 @@ pub(crate) fn parse_deflate_stream(
         let mut block = CompressedBlock::new(
             u64::try_from(block_offset).map_err(|_| ZiftError::InvalidData {
                 offset: block_offset,
-                reason: "block offset overflow".to_string(),
+                reason: "block offset overflow. Fix: use a smaller gzip stream".to_string(),
             })?,
             0,
         );
@@ -147,7 +149,7 @@ fn parse_single_block(
         }
         3 => Err(ZiftError::InvalidData {
             offset: reader.byte_pos.saturating_sub(1),
-            reason: "reserved DEFLATE block type 3".to_string(),
+            reason: "reserved DEFLATE block type 3. Fix: use a valid gzip stream".to_string(),
         }),
         _ => unreachable!(),
     }
@@ -157,14 +159,14 @@ fn parse_stored_block(
     reader: &mut BitReader<'_>,
     block: &mut CompressedBlock,
 ) -> Result<(), ZiftError> {
-    reader.align_to_byte();
+    reader.align_to_byte()?;
     let len = usize::from(reader.read_u16_le()?);
     let nlen = usize::from(reader.read_u16_le()?);
 
     if len != (!nlen & 0xFFFF) {
         return Err(ZiftError::InvalidData {
             offset: reader.byte_pos,
-            reason: "stored block length mismatch (LEN != ~NLEN)".to_string(),
+            reason: "stored block length mismatch (LEN != ~NLEN). Fix: use a valid gzip stream".to_string(),
         });
     }
 
@@ -190,7 +192,7 @@ fn parse_dynamic_trees(
     if hlit > 286 || hdist > 30 {
         return Err(ZiftError::InvalidData {
             offset: reader.byte_pos,
-            reason: "invalid dynamic Huffman header sizes".to_string(),
+            reason: "invalid dynamic Huffman header sizes. Fix: use a valid gzip stream".to_string(),
         });
     }
 
@@ -219,8 +221,18 @@ fn decode_code_lengths(
 ) -> Result<(), ZiftError> {
     let mut i = 0usize;
     let mut prev = 0u8;
+    let mut instructions = 0usize;
 
     while i < lengths.len() {
+        instructions += 1;
+        if instructions > MAX_DEFLATE_INSTRUCTIONS {
+            return Err(ZiftError::InvalidData {
+                offset: reader.byte_pos,
+                reason: format!(
+                    "dynamic tree decode exceeded instruction limit ({MAX_DEFLATE_INSTRUCTIONS}). Fix: use a shorter gzip stream or increase MAX_DEFLATE_INSTRUCTIONS"
+                ),
+            });
+        }
         let symbol = decoder.decode(reader)?;
         i = handle_code_length_symbol(reader, symbol, lengths, i, &mut prev)?;
     }
@@ -238,7 +250,7 @@ fn handle_code_length_symbol(
         0..=15 => {
             let length = u8::try_from(symbol).map_err(|_| ZiftError::InvalidData {
                 offset: reader.byte_pos,
-                reason: "code length symbol does not fit in u8".to_string(),
+                reason: "code length symbol does not fit in u8. Fix: use a valid gzip stream".to_string(),
             })?;
             lengths[i] = length;
             *prev = length;
@@ -248,7 +260,7 @@ fn handle_code_length_symbol(
             if i == 0 {
                 return Err(ZiftError::InvalidData {
                     offset: reader.byte_pos,
-                    reason: "distance code repetition before any length".to_string(),
+                    reason: "distance code repetition before any length. Fix: use a valid gzip stream".to_string(),
                 });
             }
             let repeat = 3 + reader.read_bits_usize(2)?;
@@ -278,7 +290,7 @@ fn fill_lengths(
         if i >= lengths.len() {
             return Err(ZiftError::InvalidData {
                 offset,
-                reason: "dynamic tree length overflow".to_string(),
+                reason: "dynamic tree length overflow. Fix: use a valid gzip stream".to_string(),
             });
         }
         lengths[i] = value;
@@ -293,8 +305,35 @@ fn parse_huffman_block(
     literal_decoder: &HuffmanDecoder,
     distance_decoder: &HuffmanDecoder,
 ) -> Result<bool, ZiftError> {
+    parse_huffman_block_with_limit(
+        reader,
+        block,
+        literal_decoder,
+        distance_decoder,
+        MAX_DEFLATE_INSTRUCTIONS,
+    )
+}
+
+fn parse_huffman_block_with_limit(
+    reader: &mut BitReader<'_>,
+    block: &mut CompressedBlock,
+    literal_decoder: &HuffmanDecoder,
+    distance_decoder: &HuffmanDecoder,
+    max_instructions: usize,
+) -> Result<bool, ZiftError> {
     let mut had_matches = false;
+    let mut instructions = 0usize;
     loop {
+        instructions += 1;
+        if instructions > max_instructions {
+            return Err(ZiftError::InvalidData {
+                offset: reader.byte_pos,
+                reason: format!(
+                    "DEFLATE instruction limit exceeded ({max_instructions}). Fix: use a smaller gzip stream or increase MAX_DEFLATE_INSTRUCTIONS"
+                ),
+            });
+        }
+
         let symbol = literal_decoder.decode(reader)?;
 
         match symbol {
@@ -309,7 +348,7 @@ fn parse_huffman_block(
                     .literals
                     .push(u8::try_from(symbol).map_err(|_| ZiftError::InvalidData {
                         offset: reader.byte_pos,
-                        reason: "literal symbol does not fit in u8".to_string(),
+                        reason: "literal symbol does not fit in u8. Fix: use a valid gzip stream".to_string(),
                     })?);
             }
             256 => break,
@@ -320,13 +359,13 @@ fn parse_huffman_block(
             286 | 287 => {
                 return Err(ZiftError::InvalidData {
                     offset: reader.byte_pos,
-                    reason: "invalid fixed/dynamic literal/length code".to_string(),
+                    reason: "invalid fixed/dynamic literal/length code. Fix: use a valid gzip stream".to_string(),
                 })
             }
             _ => {
                 return Err(ZiftError::InvalidData {
                     offset: reader.byte_pos,
-                    reason: "invalid literal/length code".to_string(),
+                    reason: "invalid literal/length code. Fix: use a valid gzip stream".to_string(),
                 });
             }
         }
@@ -348,12 +387,12 @@ fn parse_match(
             usize::try_from(reader.read_bits(u8::try_from(extra_bits).map_err(|_| {
                 ZiftError::InvalidData {
                     offset: reader.byte_pos,
-                    reason: "invalid literal length extra-bits".to_string(),
+                    reason: "invalid literal length extra-bits. Fix: use a valid gzip stream".to_string(),
                 }
             })?)?)
             .map_err(|_| ZiftError::InvalidData {
                 offset: reader.byte_pos,
-                reason: "literal length extra bits overflow usize".to_string(),
+                reason: "literal length extra bits overflow usize. Fix: use a valid gzip stream".to_string(),
             })?;
     }
 
@@ -361,7 +400,7 @@ fn parse_match(
     if dist_symbol >= 30 {
         return Err(ZiftError::InvalidData {
             offset: reader.byte_pos,
-            reason: "invalid distance code".to_string(),
+            reason: "invalid distance code. Fix: use a valid gzip stream".to_string(),
         });
     }
     let mut match_distance = DISTANCE_BASES[usize::from(dist_symbol)];
@@ -371,12 +410,12 @@ fn parse_match(
             usize::try_from(reader.read_bits(u8::try_from(dist_extra).map_err(|_| {
                 ZiftError::InvalidData {
                     offset: reader.byte_pos,
-                    reason: "invalid distance extra bits".to_string(),
+                    reason: "invalid distance extra bits. Fix: use a valid gzip stream".to_string(),
                 }
             })?)?)
             .map_err(|_| ZiftError::InvalidData {
                 offset: reader.byte_pos,
-                reason: "distance extra bits overflow usize".to_string(),
+                reason: "distance extra bits overflow usize. Fix: use a valid gzip stream".to_string(),
             })?;
     }
     let _ = (match_length, match_distance);
@@ -385,4 +424,80 @@ fn parse_match(
 
 fn fits_literal_cap(current: usize, additional: usize) -> bool {
     current.saturating_add(additional) <= MAX_BLOCK_LITERALS
+}
+
+#[cfg(test)]
+mod instruction_limit_tests {
+    use super::*;
+
+    #[test]
+    fn max_deflate_instructions_is_ten_million() {
+        assert_eq!(MAX_DEFLATE_INSTRUCTIONS, 10_000_000);
+    }
+
+    /// Builds a bitstream with `num_zeros` symbol-0 reads followed by one symbol-256 read,
+    /// using a 1-bit code tree where code 0 = symbol 0 and code 1 = symbol 256.
+    fn build_simple_huffman_stream(num_zeros: usize) -> Vec<u8> {
+        let total_bits = num_zeros + 1; // num_zeros zeros + one 1 for end-of-block
+        let num_bytes = total_bits.div_ceil(8);
+        let mut bytes = vec![0u8; num_bytes];
+        // Set the bit at position num_zeros to 1 (end-of-block)
+        let byte_idx = num_zeros / 8;
+        let bit_idx = num_zeros % 8;
+        bytes[byte_idx] |= 1 << bit_idx;
+        bytes
+    }
+
+    #[test]
+    fn huffman_block_instruction_limit_enforced() {
+        // Custom decoder: symbol 0 has code 0 (1 bit), symbol 256 has code 1 (1 bit).
+        let mut lengths = vec![0u8; 257];
+        lengths[0] = 1;
+        lengths[256] = 1;
+        let literal_decoder = HuffmanDecoder::from_lengths(&lengths, "test").unwrap();
+        let distance_decoder = HuffmanDecoder::from_lengths(&[0u8; 32], "test dist").unwrap();
+
+        let data = build_simple_huffman_stream(100);
+        let mut reader = BitReader::new(&data, 0);
+        let mut block = CompressedBlock::new(0, 0);
+
+        // Limit of 50 instructions should fail after 50 literal reads.
+        let result = parse_huffman_block_with_limit(
+            &mut reader,
+            &mut block,
+            &literal_decoder,
+            &distance_decoder,
+            50,
+        );
+        assert!(result.is_err());
+        let msg = format!("{result:?}");
+        assert!(
+            msg.contains("DEFLATE instruction limit exceeded"),
+            "expected instruction-limit error, got {msg}"
+        );
+    }
+
+    #[test]
+    fn huffman_block_just_under_limit_succeeds() {
+        let mut lengths = vec![0u8; 257];
+        lengths[0] = 1;
+        lengths[256] = 1;
+        let literal_decoder = HuffmanDecoder::from_lengths(&lengths, "test").unwrap();
+        let distance_decoder = HuffmanDecoder::from_lengths(&[0u8; 32], "test dist").unwrap();
+
+        let data = build_simple_huffman_stream(100);
+        let mut reader = BitReader::new(&data, 0);
+        let mut block = CompressedBlock::new(0, 0);
+
+        // Limit of 101 allows 100 literal reads + end-of-block.
+        let result = parse_huffman_block_with_limit(
+            &mut reader,
+            &mut block,
+            &literal_decoder,
+            &distance_decoder,
+            101,
+        );
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
+        assert_eq!(block.literals.len(), 100);
+    }
 }

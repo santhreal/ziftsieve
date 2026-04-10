@@ -189,17 +189,11 @@ fn test_concurrent_stress() {
         handles.push(thread::spawn(move || {
             let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
             let res1 = builder.build_from_bytes(&d);
-            match res1 {
-                Ok(_) => {}
-                Err(_) => {}
-            } // Must not panic
+            let _ = res1; // Must not panic
 
             let mut stream_builder = StreamingIndexBuilder::new(CompressionFormat::Lz4);
             let res2 = stream_builder.process_chunk(&d);
-            match res2 {
-                Ok(_) => {}
-                Err(_) => {}
-            } // Must not panic
+            let _ = res2; // Must not panic
             let final_res = stream_builder.finalize();
             assert!(
                 final_res.is_ok(),
@@ -233,17 +227,11 @@ fn test_adversarial_boundaries() {
     for case in cases {
         let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
         let res1 = builder.build_from_bytes(&case);
-        match res1 {
-            Ok(_) => {}
-            Err(_) => {}
-        } // Must not panic
+        let _ = res1; // Must not panic
 
         let mut stream_builder = StreamingIndexBuilder::new(CompressionFormat::Lz4);
         let res2 = stream_builder.process_chunk(&case);
-        match res2 {
-            Ok(_) => {}
-            Err(_) => {}
-        } // Must not panic
+        let _ = res2; // Must not panic
         let final_res = stream_builder.finalize();
         assert!(
             final_res.is_ok(),

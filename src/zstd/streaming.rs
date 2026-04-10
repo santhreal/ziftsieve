@@ -56,7 +56,7 @@ pub fn extract_literals(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> 
         if total_literals > max_allowed_literals {
             return Err(ZiftError::InvalidData {
                 offset: pos,
-                reason: format!("decompression ratio exceeded limit of {MAX_DECOMPRESSION_RATIO}"),
+                reason: format!("decompression ratio exceeded limit of {MAX_DECOMPRESSION_RATIO}. Fix: use a non-malicious Zstd stream or increase MAX_DECOMPRESSION_RATIO"),
             });
         }
 
@@ -70,7 +70,7 @@ pub fn extract_literals(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> 
         if blocks.len() >= 100_000 {
             return Err(ZiftError::InvalidData {
                 offset: pos,
-                reason: "too many blocks (>100K), likely malformed".to_string(),
+                reason: "too many blocks (>100K), likely malformed. Fix: use a valid Zstd stream".to_string(),
             });
         }
     }
@@ -85,7 +85,7 @@ pub(crate) fn parse_block(
     if *pos + 3 > data.len() {
         return Err(ZiftError::InvalidData {
             offset: *pos,
-            reason: "truncated block header".to_string(),
+            reason: "truncated block header. Fix: use a complete Zstd stream".to_string(),
         });
     }
 
@@ -98,7 +98,7 @@ pub(crate) fn parse_block(
     let last_block = (b0 & 0x01) != 0;
     let block_type = BlockType::from_u8((b0 >> 1) & 0x03).ok_or(ZiftError::InvalidData {
         offset: *pos - 3,
-        reason: "invalid block type".to_string(),
+        reason: "invalid block type. Fix: use a valid Zstd stream".to_string(),
     })?;
 
     let block_size = ((b0 >> 3) as usize) | ((b1 as usize) << 5) | ((b2 as usize) << 13);
@@ -118,11 +118,11 @@ pub(crate) fn parse_block(
         _ => block_size,
     };
 
-    if *pos + stream_data_size > data.len() {
+    if pos.saturating_add(stream_data_size) > data.len() {
         return Err(ZiftError::InvalidData {
             offset: *pos,
             reason: format!(
-                "block data size {stream_data_size} exceeds remaining data {}",
+                "block data size {stream_data_size} exceeds remaining data {}. Fix: use a complete Zstd stream",
                 data.len() - *pos
             ),
         });
@@ -160,7 +160,7 @@ pub(crate) fn parse_block(
         BlockType::Reserved => {
             return Err(ZiftError::InvalidData {
                 offset: *pos - 3,
-                reason: "reserved block type".to_string(),
+                reason: "reserved block type. Fix: use a valid Zstd stream".to_string(),
             });
         }
     }

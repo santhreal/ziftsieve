@@ -26,7 +26,7 @@ pub(crate) fn extract_literals_from_block(data: &[u8]) -> Result<Vec<u8>, ZiftEr
             if pos + regenerated_size > data.len() {
                 return Err(ZiftError::InvalidData {
                     offset: pos,
-                    reason: "raw literals exceed block size".to_string(),
+                    reason: "raw literals exceed block size. Fix: use a valid Zstd stream".to_string(),
                 });
             }
             Ok(data[pos..pos + regenerated_size].to_vec())
@@ -38,7 +38,7 @@ pub(crate) fn extract_literals_from_block(data: &[u8]) -> Result<Vec<u8>, ZiftEr
             if pos >= data.len() {
                 return Err(ZiftError::InvalidData {
                     offset: pos,
-                    reason: "truncated RLE literal".to_string(),
+                    reason: "truncated RLE literal. Fix: use a complete Zstd stream".to_string(),
                 });
             }
             let byte = data[pos];
@@ -55,7 +55,7 @@ pub(crate) fn extract_literals_from_block(data: &[u8]) -> Result<Vec<u8>, ZiftEr
                 if pos + regenerated_size > data.len() {
                     return Err(ZiftError::InvalidData {
                         offset: pos,
-                        reason: "uncompressed literals exceed block bounds".to_string(),
+                        reason: "uncompressed literals exceed block bounds. Fix: use a valid Zstd stream".to_string(),
                     });
                 }
                 Ok(data[pos..pos + regenerated_size].to_vec())
@@ -64,18 +64,16 @@ pub(crate) fn extract_literals_from_block(data: &[u8]) -> Result<Vec<u8>, ZiftEr
                 if pos + compressed_size > data.len() {
                     return Err(ZiftError::InvalidData {
                         offset: pos,
-                        reason: "compressed literals exceed block bounds".to_string(),
+                        reason: "compressed literals exceed block bounds. Fix: use a valid Zstd stream".to_string(),
                     });
                 }
                 let compressed = &data[pos..pos + compressed_size];
 
-                match decode_literals(compressed, regenerated_size) {
-                    Some(literals) => Ok(literals),
-                    None => {
-                        // Decoding failed - return raw bytes as fallback
-                        Ok(compressed.to_vec())
-                    }
-                }
+                decode_literals(compressed, regenerated_size)
+                    .ok_or_else(|| ZiftError::InvalidData {
+                        offset: pos,
+                        reason: "Huffman literal decoding failed. Fix: use a valid Zstd stream".to_string(),
+                    })
             }
         }
         3 => {
@@ -83,7 +81,7 @@ pub(crate) fn extract_literals_from_block(data: &[u8]) -> Result<Vec<u8>, ZiftEr
             // Requires external dictionary - cannot extract without it
             Err(ZiftError::InvalidData {
                 offset: pos,
-                reason: "treeless compressed literals (dictionary) are not supported".to_string(),
+                reason: "treeless compressed literals (dictionary) are not supported. Fix: use a Zstd stream without dictionary compression".to_string(),
             })
         }
         _ => unreachable!(),
@@ -111,7 +109,7 @@ fn read_raw_rle_size(header: u8, data: &[u8]) -> Result<(usize, usize), ZiftErro
             if data.len() < 2 {
                 return Err(ZiftError::InvalidData {
                     offset: 1,
-                    reason: "truncated raw/RLE literal size".to_string(),
+                    reason: "truncated raw/RLE literal size. Fix: use a complete Zstd stream".to_string(),
                 });
             }
             let le16 = u16::from_le_bytes([data[0], data[1]]);
@@ -123,7 +121,7 @@ fn read_raw_rle_size(header: u8, data: &[u8]) -> Result<(usize, usize), ZiftErro
             if data.len() < 3 {
                 return Err(ZiftError::InvalidData {
                     offset: 1,
-                    reason: "truncated raw/RLE literal size".to_string(),
+                    reason: "truncated raw/RLE literal size. Fix: use a complete Zstd stream".to_string(),
                 });
             }
             let le24 = u32::from_le_bytes([data[0], data[1], data[2], 0]);
@@ -148,13 +146,13 @@ fn read_compressed_size(header: u8, data: &[u8]) -> Result<(usize, usize, usize)
     match lhl_code {
         0 | 1 => {
             // 3 bytes total
-            if data.len() < 4 {
+            if data.len() < 3 {
                 return Err(ZiftError::InvalidData {
                     offset: 1,
-                    reason: "truncated compressed literal size".to_string(),
+                    reason: "truncated compressed literal size. Fix: use a complete Zstd stream".to_string(),
                 });
             }
-            let le32 = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+            let le32 = u32::from_le_bytes([data[0], data[1], data[2], 0]);
             let size = ((le32 >> 4) & 0x3FF) as usize;
             let csize = ((le32 >> 14) & 0x3FF) as usize;
             Ok((size, csize, 3))
@@ -164,7 +162,7 @@ fn read_compressed_size(header: u8, data: &[u8]) -> Result<(usize, usize, usize)
             if data.len() < 4 {
                 return Err(ZiftError::InvalidData {
                     offset: 1,
-                    reason: "truncated compressed literal size".to_string(),
+                    reason: "truncated compressed literal size. Fix: use a complete Zstd stream".to_string(),
                 });
             }
             let le32 = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
@@ -177,7 +175,7 @@ fn read_compressed_size(header: u8, data: &[u8]) -> Result<(usize, usize, usize)
             if data.len() < 5 {
                 return Err(ZiftError::InvalidData {
                     offset: 1,
-                    reason: "truncated compressed literal size".to_string(),
+                    reason: "truncated compressed literal size. Fix: use a complete Zstd stream".to_string(),
                 });
             }
             let le32 = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);

@@ -82,7 +82,7 @@ pub fn extract_literals(compressed: &[u8], max_output: usize) -> Result<Vec<u8>,
         if sequence_count >= MAX_SEQUENCES_PER_BLOCK {
             return Err(ZiftError::InvalidData {
                 offset: pos,
-                reason: format!("too many LZ4 sequences (max {MAX_SEQUENCES_PER_BLOCK})"),
+                reason: format!("too many LZ4 sequences (max {MAX_SEQUENCES_PER_BLOCK}). Fix: use a smaller LZ4 block or increase MAX_SEQUENCES_PER_BLOCK"),
             });
         }
 
@@ -111,19 +111,20 @@ pub fn extract_literals(compressed: &[u8], max_output: usize) -> Result<Vec<u8>,
             });
         }
 
+        // Ensure the claimed literal fits inside the block regardless of output cap
+        if pos + literal_len > compressed.len() {
+            return Err(ZiftError::InvalidData {
+                offset: pos,
+                reason: "literal exceeds block bounds. Fix: use a valid LZ4 stream".to_string(),
+            });
+        }
+
         // Check if adding this literal would exceed max_output
         let remaining_output = max_output.saturating_sub(literals.len());
         let to_copy = literal_len.min(remaining_output);
 
         // Copy literal bytes
         if to_copy > 0 {
-            if pos + to_copy > compressed.len() {
-                return Err(ZiftError::InvalidData {
-                    offset: pos,
-                    reason: "literal exceeds block bounds".to_string(),
-                });
-            }
-
             // Reserve space in chunks to reduce reallocations
             if to_copy > 1024 && literals.capacity() - literals.len() < to_copy {
                 let reserve_amount = (MAX_BLOCK_SIZE / 4)
@@ -137,7 +138,7 @@ pub fn extract_literals(compressed: &[u8], max_output: usize) -> Result<Vec<u8>,
         }
 
         // Advance position by full literal_len even if we truncated
-        pos = pos.saturating_add(literal_len);
+        pos += literal_len;
 
         // Skip match data (we don't resolve back-references).
         // In LZ4, every sequence except the LAST has a match section.
@@ -149,7 +150,7 @@ pub fn extract_literals(compressed: &[u8], max_output: usize) -> Result<Vec<u8>,
             if pos + 2 > compressed.len() {
                 return Err(ZiftError::InvalidData {
                     offset: pos,
-                    reason: "truncated match offset".to_string(),
+                    reason: "truncated match offset. Fix: use a complete LZ4 stream".to_string(),
                 });
             }
             pos += 2; // Skip offset
@@ -175,7 +176,7 @@ fn decode_length(data: &[u8], pos: &mut usize, initial: usize) -> Result<usize, 
         if *pos >= data.len() {
             return Err(ZiftError::InvalidData {
                 offset: *pos,
-                reason: "truncated length encoding".to_string(),
+                reason: "truncated length encoding. Fix: use a complete LZ4 stream".to_string(),
             });
         }
         let byte = data[*pos];
@@ -184,7 +185,7 @@ fn decode_length(data: &[u8], pos: &mut usize, initial: usize) -> Result<usize, 
             .checked_add(byte as usize)
             .ok_or(ZiftError::InvalidData {
                 offset: *pos,
-                reason: "length overflow in variable-length encoding".to_string(),
+                reason: "length overflow in variable-length encoding. Fix: use a valid LZ4 stream".to_string(),
             })?;
 
         if byte < 255 {
@@ -229,29 +230,29 @@ const MAX_DECOMPRESSION_RATIO: usize = 250;
 /// A vector of [`CompressedBlock`] values in stream order.
 pub fn parse_lz4_blocks(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> {
     let mut blocks = Vec::new();
-    let mut offset = parse_frame_header(data)? as u64;
+    let mut offset = parse_frame_header(data)?;
 
     let mut total_literals = 0usize;
 
-    while offset < data.len() as u64 {
+    while offset < data.len() {
         // Prevent DoS from too many blocks
         if blocks.len() >= MAX_BLOCKS_PER_STREAM {
             return Err(ZiftError::InvalidData {
-                offset: usize::try_from(offset).unwrap_or(0),
-                reason: format!("too many LZ4 blocks (max {MAX_BLOCKS_PER_STREAM})"),
+                offset,
+                reason: format!("too many LZ4 blocks (max {MAX_BLOCKS_PER_STREAM}). Fix: use a smaller LZ4 stream or increase MAX_BLOCKS_PER_STREAM"),
             });
         }
 
-        if offset + 4 > data.len() as u64 {
+        if offset.saturating_add(4) > data.len() {
             break; // Incomplete block header
         }
 
         // Read block header (compressed size)
         let block_size = u32::from_le_bytes([
-            data[usize::try_from(offset).unwrap_or(0)],
-            data[usize::try_from(offset).unwrap_or(0) + 1],
-            data[usize::try_from(offset).unwrap_or(0) + 2],
-            data[usize::try_from(offset).unwrap_or(0) + 3],
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
         ]) as usize;
 
         // High bit indicates uncompressed block
@@ -271,20 +272,23 @@ pub fn parse_lz4_blocks(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> 
         }
 
         let header_size = 4usize;
-        let data_start = usize::try_from(offset).unwrap_or(0) + header_size;
-        let data_end = data_start + size;
+        let data_start = offset.saturating_add(header_size);
+        let data_end = data_start.saturating_add(size);
 
         if data_end > data.len() {
             return Err(ZiftError::InvalidData {
-                offset: usize::try_from(offset).unwrap_or(0),
-                reason: "truncated block".to_string(),
+                offset,
+                reason: "truncated block. Fix: use a complete LZ4 stream".to_string(),
             });
         }
 
         let block_data = &data[data_start..data_end];
 
         let mut block = CompressedBlock::new(
-            offset,
+            u64::try_from(offset).map_err(|_| ZiftError::InvalidData {
+                offset,
+                reason: "block offset exceeds u64. Fix: use a smaller LZ4 stream".to_string(),
+            })?,
             u32::try_from(size).map_err(|_| ZiftError::BlockTooLarge {
                 size,
                 max: MAX_BLOCK_SIZE,
@@ -313,16 +317,13 @@ pub fn parse_lz4_blocks(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> 
             .max(1024 * 1024);
         if total_literals > max_allowed_literals {
             return Err(ZiftError::InvalidData {
-                offset: usize::try_from(offset).unwrap_or(0),
-                reason: format!("decompression ratio exceeded limit of {MAX_DECOMPRESSION_RATIO}"),
+                offset,
+                reason: format!("decompression ratio exceeded limit of {MAX_DECOMPRESSION_RATIO}. Fix: use a non-malicious LZ4 stream or increase MAX_DECOMPRESSION_RATIO"),
             });
         }
 
         blocks.push(block);
-        offset = u64::try_from(data_end).map_err(|_| ZiftError::InvalidData {
-            offset: usize::try_from(offset).unwrap_or(0),
-            reason: "offset overflow".to_string(),
-        })?;
+        offset = data_end;
     }
 
     Ok(blocks)
@@ -332,7 +333,7 @@ fn parse_frame_header(data: &[u8]) -> Result<usize, ZiftError> {
     if data.is_empty() {
         return Err(ZiftError::InvalidData {
             offset: 0,
-            reason: "empty input is not valid LZ4 data".to_string(),
+            reason: "empty input is not valid LZ4 data. Fix: provide non-empty LZ4 data".to_string(),
         });
     }
     if data.len() < 4 || data[..4] != LZ4_FRAME_MAGIC {
@@ -343,7 +344,7 @@ fn parse_frame_header(data: &[u8]) -> Result<usize, ZiftError> {
     if data.len() < 7 {
         return Err(ZiftError::InvalidData {
             offset: data.len(),
-            reason: "truncated lz4 frame header".to_string(),
+            reason: "truncated lz4 frame header. Fix: use a complete LZ4 stream".to_string(),
         });
     }
 
@@ -353,7 +354,7 @@ fn parse_frame_header(data: &[u8]) -> Result<usize, ZiftError> {
     if (flg & 0xC0) != 0x40 {
         return Err(ZiftError::InvalidData {
             offset: 4,
-            reason: "unsupported LZ4 frame version".to_string(),
+            reason: "unsupported LZ4 frame version. Fix: use LZ4 frame version 1".to_string(),
         });
     }
 
@@ -368,7 +369,7 @@ fn parse_frame_header(data: &[u8]) -> Result<usize, ZiftError> {
     if pos >= data.len() {
         return Err(ZiftError::InvalidData {
             offset: pos,
-            reason: "truncated lz4 frame descriptor".to_string(),
+            reason: "truncated lz4 frame descriptor. Fix: use a complete LZ4 stream".to_string(),
         });
     }
 

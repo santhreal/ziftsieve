@@ -7,8 +7,10 @@
 //! Snappy framing format:
 //! - Stream identifier (0xff + 6-byte "sNaPpY")
 //! - Chunks with 1-byte type tag + 2-3 byte length + data
-//! - Type 0x00: Literal
-//! - Type 0x01: Copy (back-reference)
+//! - Type 0x00: Compressed data
+//! - Type 0x01: Uncompressed data
+//! - Type 0xfe: Padding
+//! - Type 0xff: Stream identifier
 //!
 //! We extract only literals, skipping copy resolution.
 
@@ -26,22 +28,85 @@ const MAX_TOTAL_LITERALS: usize = 256 * 1024 * 1024; // 256MB
 /// Maximum decompression ratio to prevent zip bombs.
 const MAX_DECOMPRESSION_RATIO: usize = 250;
 
-/// Extract literals from Snappy compressed data.
+fn handle_snappy_chunk(
+    chunk_type: u8,
+    chunk_data: &[u8],
+    current_literals: &mut Vec<u8>,
+    pos: usize,
+) -> Result<(), ZiftError> {
+    match chunk_type {
+        0x00 => {
+            if chunk_data.len() < 4 {
+                return Err(ZiftError::InvalidData {
+                    offset: pos,
+                    reason: "compressed snappy chunk too short for CRC. Fix: use a valid Snappy stream".to_string(),
+                });
+            }
+            let compressed = &chunk_data[4..];
+            let uncompressed_len = snap::raw::decompress_len(compressed).map_err(|_| {
+                ZiftError::InvalidData {
+                    offset: pos,
+                    reason: "invalid snappy compressed chunk. Fix: use a valid Snappy stream".to_string(),
+                }
+            })?;
+            if uncompressed_len > MAX_TOTAL_LITERALS {
+                return Err(ZiftError::BlockTooLarge {
+                    size: uncompressed_len,
+                    max: MAX_TOTAL_LITERALS,
+                });
+            }
+            let mut decoder = snap::raw::Decoder::new();
+            let literals = decoder.decompress_vec(compressed).map_err(|_| {
+                ZiftError::InvalidData {
+                    offset: pos,
+                    reason: "snappy decompression failed. Fix: use a valid Snappy stream".to_string(),
+                }
+            })?;
+            current_literals.extend_from_slice(&literals);
+        }
+        0x01 => {
+            if chunk_data.len() > 4 {
+                current_literals.extend_from_slice(&chunk_data[4..]);
+            }
+        }
+        0xfe | 0xff => {
+            // Padding (0xfe) and stream identifier (0xff) — skip.
+        }
+        0x02..=0xfd => {
+            return Err(ZiftError::InvalidData {
+                offset: pos,
+                reason: format!("reserved unskippable snappy chunk type 0x{chunk_type:02x}. Fix: use a standard Snappy framing stream"),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Extract literal bytes from a Snappy-framed stream.
 ///
-/// # Errors
-///
-/// Returns `ZiftError` if the chunk length exceeds maximum limits,
-/// if data bounds are exceeded, or if an unexpected stream identifier
-/// is encountered mid-stream.
+/// Parses Snappy framing chunks, collecting literals from uncompressed
+/// and compressed data chunks while skipping padding and stream identifiers.
 ///
 /// # Parameters
 ///
-/// - `data`: Snappy framed stream bytes.
+/// - `data`: Snappy-framed byte slice.
 ///
 /// # Returns
 ///
-/// Parsed blocks with their extracted literals.
+/// A vector of [`CompressedBlock`] values containing extracted literals.
+///
+/// # Errors
+///
+/// Returns [`ZiftError::InvalidData`] if the stream is truncated or contains
+/// malformed chunks, or [`ZiftError::BlockTooLarge`] if limits are exceeded.
 pub fn extract_literals(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> {
+    if data.is_empty() {
+        return Err(ZiftError::InvalidData {
+            offset: 0,
+            reason: "empty snappy input. Fix: provide non-empty Snappy data".to_string(),
+        });
+    }
+
     let mut blocks = Vec::new();
     let mut pos = 0usize;
     let mut chunk_count = 0usize;
@@ -62,12 +127,12 @@ pub fn extract_literals(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> 
         if chunk_count >= MAX_CHUNKS_PER_STREAM {
             return Err(ZiftError::InvalidData {
                 offset: pos,
-                reason: format!("too many Snappy chunks (max {MAX_CHUNKS_PER_STREAM})"),
+                reason: format!("too many Snappy chunks (max {MAX_CHUNKS_PER_STREAM}). Fix: use a smaller Snappy stream or increase MAX_CHUNKS_PER_STREAM"),
             });
         }
 
         // Check total literals limit
-        if total_literals + current_literals.len() > MAX_TOTAL_LITERALS {
+        if total_literals.saturating_add(current_literals.len()) > MAX_TOTAL_LITERALS {
             return Err(ZiftError::BlockTooLarge {
                 size: total_literals + current_literals.len(),
                 max: MAX_TOTAL_LITERALS,
@@ -81,7 +146,7 @@ pub fn extract_literals(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> 
         if total_literals > max_allowed_literals {
             return Err(ZiftError::InvalidData {
                 offset: pos,
-                reason: format!("decompression ratio exceeded limit of {MAX_DECOMPRESSION_RATIO}"),
+                reason: format!("decompression ratio exceeded limit of {MAX_DECOMPRESSION_RATIO}. Fix: use a non-malicious Snappy stream or increase MAX_DECOMPRESSION_RATIO"),
             });
         }
 
@@ -106,36 +171,13 @@ pub fn extract_literals(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> 
         if pos + chunk_len > data.len() {
             return Err(ZiftError::InvalidData {
                 offset: pos,
-                reason: "chunk exceeds data bounds".to_string(),
+                reason: "chunk exceeds data bounds. Fix: use a complete Snappy stream".to_string(),
             });
         }
 
         let chunk_data = &data[pos..pos + chunk_len];
 
-        match chunk_type {
-            0x00 => {
-                // Compressed data chunk (per Snappy framing spec).
-                // First 4 bytes = masked CRC-32C of uncompressed data. Skip.
-                // Remaining bytes = Snappy-compressed block.
-                // We cannot extract just literals without skipping backreferences
-                // which leads to silent data loss. Full decompression is required
-                // but currently unsupported.
-                return Err(ZiftError::InvalidData {
-                    offset: pos,
-                    reason: "compressed snappy blocks are not supported, only uncompressed blocks are supported".to_string(),
-                });
-            }
-            0x01 => {
-                // Uncompressed data chunk — the literal bytes ARE the chunk data.
-                // First 4 bytes = masked CRC-32C. Rest is raw uncompressed data.
-                if chunk_data.len() > 4 {
-                    current_literals.extend_from_slice(&chunk_data[4..]);
-                }
-            }
-            _ => {
-                // Other chunks (Stream identifier, Padding, Reserved) — skip.
-            }
-        }
+        handle_snappy_chunk(chunk_type, chunk_data, &mut current_literals, pos)?;
 
         // Flush block if getting large
         if current_literals.len() > 32 * 1024 {
@@ -205,7 +247,7 @@ fn decode_chunk_len(data: &[u8], start: usize) -> Result<(usize, usize), ZiftErr
     if start + 3 > data.len() {
         return Err(ZiftError::InvalidData {
             offset: start,
-            reason: "truncated chunk length — need 3 bytes for Snappy framing length".to_string(),
+            reason: "truncated chunk length — need 3 bytes for Snappy framing length. Fix: use a complete Snappy stream".to_string(),
         });
     }
 
@@ -222,19 +264,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_empty_data() {
+    fn test_empty_data_rejected() {
         let data = [];
-        let blocks = extract_literals(&data).unwrap();
-        assert!(blocks.is_empty());
+        let result = extract_literals(&data);
+        assert!(matches!(result, Err(ZiftError::InvalidData { .. })));
     }
 
     #[test]
-    fn test_rejects_compressed_chunk() {
-        // Stream identifier followed by a 0x00 compressed chunk
-        // Chunk type 0x00, Length 5 (0x05, 0x00, 0x00), CRC (4 bytes), 1 byte data
+    fn test_rejects_invalid_compressed_chunk() {
+        // Stream identifier followed by a 0x00 compressed chunk with truncated data
+        // Chunk length = 5 (4-byte CRC + 1 byte of compressed data).
+        // The 1-byte compressed payload (0x01) is a valid varint length but missing data.
         let data = [
             0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59, // Stream identifier
-            0x00, 0x05, 0x00, 0x00, 0x11, 0x22, 0x33, 0x44, 0x00, // Compressed chunk
+            0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // Invalid compressed chunk
+        ];
+        let result = extract_literals(&data);
+        assert!(matches!(result, Err(ZiftError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn test_rejects_reserved_chunk() {
+        let data = [
+            0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59, // Stream identifier
+            0x02, 0x00, 0x00, 0x00, // Reserved unskippable chunk
         ];
         let result = extract_literals(&data);
         assert!(matches!(result, Err(ZiftError::InvalidData { .. })));

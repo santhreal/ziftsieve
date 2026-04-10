@@ -37,7 +37,7 @@ pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<FrameHe
     if data.len() < 4 {
         return Err(ZiftError::InvalidData {
             offset: 0,
-            reason: "data too short for frame header".to_string(),
+            reason: "data too short for frame header. Fix: use a complete Zstd stream".to_string(),
         });
     }
 
@@ -47,7 +47,7 @@ pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<FrameHe
         if iterations >= 3 {
             return Err(ZiftError::InvalidData {
                 offset: *pos,
-                reason: "too many skippable frames".to_string(),
+                reason: "too many skippable frames. Fix: use a valid Zstd stream".to_string(),
             });
         }
         iterations += 1;
@@ -55,7 +55,7 @@ pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<FrameHe
         if *pos + 4 > data.len() {
             return Err(ZiftError::InvalidData {
                 offset: *pos,
-                reason: "truncated frame header after skippable frame".to_string(),
+                reason: "truncated frame header after skippable frame. Fix: use a complete Zstd stream".to_string(),
             });
         }
 
@@ -74,7 +74,7 @@ pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<FrameHe
             if *pos + 8 > data.len() {
                 return Err(ZiftError::InvalidData {
                     offset: *pos,
-                    reason: "truncated skippable frame header".to_string(),
+                    reason: "truncated skippable frame header. Fix: use a complete Zstd stream".to_string(),
                 });
             }
             let frame_size = usize::try_from(u32::from_le_bytes([
@@ -89,13 +89,13 @@ pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<FrameHe
                 .and_then(|p| p.checked_add(frame_size))
                 .ok_or(ZiftError::InvalidData {
                     offset: *pos,
-                    reason: "skippable frame size overflow".to_string(),
+                    reason: "skippable frame size overflow. Fix: use a valid Zstd stream".to_string(),
                 })?;
 
             if *pos > data.len() {
                 return Err(ZiftError::InvalidData {
                     offset: *pos,
-                    reason: "skippable frame extends beyond data".to_string(),
+                    reason: "skippable frame extends beyond data. Fix: use a complete Zstd stream".to_string(),
                 });
             }
             continue; // Try again after skipping
@@ -103,7 +103,7 @@ pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<FrameHe
 
         return Err(ZiftError::InvalidData {
             offset: *pos,
-            reason: "invalid Zstd magic number".to_string(),
+            reason: "invalid Zstd magic number. Fix: use a valid Zstd stream".to_string(),
         });
     }
 }
@@ -117,7 +117,7 @@ pub(crate) fn parse_standard_frame_header(
     if *pos >= data.len() {
         return Err(ZiftError::InvalidData {
             offset: *pos,
-            reason: "truncated frame header descriptor".to_string(),
+            reason: "truncated frame header descriptor. Fix: use a complete Zstd stream".to_string(),
         });
     }
 
@@ -134,7 +134,7 @@ pub(crate) fn parse_standard_frame_header(
         if *pos >= data.len() {
             return Err(ZiftError::InvalidData {
                 offset: *pos,
-                reason: "truncated window descriptor".to_string(),
+                reason: "truncated window descriptor. Fix: use a complete Zstd stream".to_string(),
             });
         }
         let wd = data[*pos];
@@ -146,11 +146,9 @@ pub(crate) fn parse_standard_frame_header(
 
         // Calculate window size per Zstd spec
         // base = 1KB * 2^exponent (clamped to prevent overflow)
-        let base = if exponent >= 63 {
-            usize::MAX
-        } else {
-            1024usize << exponent
-        };
+        // exponent is at most 31 (5 bits), so cast to u32 is safe.
+        #[allow(clippy::cast_possible_truncation)]
+        let base = 1024usize.checked_shl(exponent as u32).unwrap_or(usize::MAX);
         base.saturating_add(mantissa.saturating_mul(base) / 8)
     } else {
         0
@@ -163,7 +161,7 @@ pub(crate) fn parse_standard_frame_header(
             if *pos >= data.len() {
                 return Err(ZiftError::InvalidData {
                     offset: *pos,
-                    reason: "truncated dictionary ID".to_string(),
+                    reason: "truncated dictionary ID. Fix: use a complete Zstd stream".to_string(),
                 });
             }
             let id = u64::from(data[*pos]);
@@ -174,7 +172,7 @@ pub(crate) fn parse_standard_frame_header(
             if *pos + 2 > data.len() {
                 return Err(ZiftError::InvalidData {
                     offset: *pos,
-                    reason: "truncated dictionary ID".to_string(),
+                    reason: "truncated dictionary ID. Fix: use a complete Zstd stream".to_string(),
                 });
             }
             let id = u64::from(u16::from_le_bytes([data[*pos], data[*pos + 1]]));
@@ -185,7 +183,7 @@ pub(crate) fn parse_standard_frame_header(
             if *pos + 4 > data.len() {
                 return Err(ZiftError::InvalidData {
                     offset: *pos,
-                    reason: "truncated dictionary ID".to_string(),
+                    reason: "truncated dictionary ID. Fix: use a complete Zstd stream".to_string(),
                 });
             }
             let id = u64::from(u32::from_le_bytes([

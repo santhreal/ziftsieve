@@ -6,6 +6,6 @@ fn doc_test_compression_format() {
     assert!(f == ziftsieve::CompressionFormat::Lz4);
 
     // Check clone
-    let f2 = f.clone();
+    let f2 = f;
     assert_eq!(f, f2);
 }

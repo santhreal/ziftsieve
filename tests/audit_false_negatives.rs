@@ -45,7 +45,7 @@ fn audit_cross_block_pattern_risk() {
 
     // Neither block has a 4-byte window of "PATTERN"
     // "PATT" is in block 1, but "TERN" (or any 4-byte window of "ERN") is not in block 2
-    assert!(block1_might_have || !block1_might_have); // Documented limitation
+    let _ = block1_might_have; // Documented limitation: may be true or false
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn audit_pattern_longer_than_literals() {
 
     // "SHOR" and "HORT" should both be in the bloom filter
     // But the full pattern check might not work as expected
-    assert!(might_contain || !might_contain); // Depends on implementation
+    let _ = might_contain; // Depends on implementation
 }
 
 #[test]
@@ -331,7 +331,7 @@ fn audit_verify_contains_repeated_byte() {
         let block = index.get_block(i).unwrap();
         // Any sequence of 'A's should match (if present)
         let _ = block.verify_contains(b"AAA");
-        let _ = block.verify_contains(&vec![b'A'; 100]);
+        let _ = block.verify_contains(&[b'A'; 100]);
         // Different byte should not match
         assert!(!block.verify_contains(b"AAB"));
     }
@@ -384,7 +384,7 @@ fn audit_literal_density_calculation() {
         let block = index.get_block(i).unwrap();
         let density = block.literal_density();
         // Density should be in valid range
-        assert!(density >= 0.0 && density <= 1.0);
+        assert!((0.0..=1.0).contains(&density));
     }
 }
 
@@ -451,7 +451,7 @@ fn audit_search_parity_gzip() {
     let compressed = encoder.finish().unwrap();
 
     let mut decompressed = Vec::new();
-    GzDecoder::new(&compressed[..]).read_to_end(&mut decompressed);
+    let _ = GzDecoder::new(&compressed[..]).read_to_end(&mut decompressed);
 
     let index = CompressedIndexBuilder::new(CompressionFormat::Gzip)
         .build_from_bytes(&compressed)

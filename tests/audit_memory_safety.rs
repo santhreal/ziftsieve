@@ -219,10 +219,7 @@ fn audit_streaming_builder_memory_efficiency() {
         let chunk = format!("Chunk {} data content for streaming test.", i);
         let compressed = lz4_compress(chunk.as_bytes());
 
-        match builder.process_chunk(&compressed) {
-            Ok(_) => {}
-            Err(_) => {} // Error is acceptable
-        }
+        let _ = builder.process_chunk(&compressed);
     }
 
     let index = builder.finalize().expect("Should finalize");
@@ -254,9 +251,8 @@ fn audit_streaming_builder_mixed_chunks() {
     builder.process_chunk(&invalid).ok();
     builder.process_chunk(&valid).ok();
 
-    let index = builder.finalize().expect("Should finalize");
+    let _index = builder.finalize().expect("Should finalize");
     // Should have blocks from valid chunks
-    assert!(index.block_count() >= 0);
 }
 
 #[test]
@@ -305,9 +301,7 @@ fn audit_malformed_lz4_truncated_match_offset() {
 fn audit_malformed_lz4_overflow_length() {
     // Length that would overflow
     let mut data = vec![0xF0]; // literal_len=15
-    for _ in 0..100 {
-        data.push(0xFF); // Keep adding 255
-    }
+    data.extend(std::iter::repeat_n(0xFF, 100));
 
     let result = extract_from_bytes(CompressionFormat::Lz4, &data);
     assert!(result.is_err() || result.is_ok());
@@ -398,7 +392,7 @@ fn audit_all_formats_handle_empty_input() {
     #[cfg(feature = "snappy")]
     {
         let result = extract_from_bytes(CompressionFormat::Snappy, b"");
-        assert!(result.is_ok());
+        assert!(result.is_err(), "empty Snappy input must be rejected");
     }
 }
 
