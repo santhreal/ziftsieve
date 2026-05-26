@@ -10,6 +10,7 @@ impl fmt::Display for CompressionFormat {
             Self::Snappy => write!(f, "Snappy"),
             Self::Gzip => write!(f, "Gzip"),
             Self::Zstd => write!(f, "Zstd"),
+            _ => write!(f, "unknown"),
         }
     }
 }
@@ -22,6 +23,7 @@ impl CompressionFormat {
             Self::Snappy => "snappy",
             Self::Gzip => "gzip",
             Self::Zstd => "zstd",
+            _ => "unknown",
         }
     }
 

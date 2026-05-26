@@ -196,5 +196,6 @@ pub fn extract_from_bytes(
             format,
             feature: format.feature_name(),
         }),
+        _ => Err(ZiftError::UnsupportedFormat(format)),
     }
 }
