@@ -1,5 +1,7 @@
 # ziftsieve
 
+Part of [Santh](https://santh.dev) - open source Rust security and infrastructure tooling. Follow [@SanthProject](https://x.com/SanthProject) on X.
+
 Search compressed data without full decompression.
 
 [![Crates.io](https://img.shields.io/crates/v/ziftsieve)](https://crates.io/crates/ziftsieve)
