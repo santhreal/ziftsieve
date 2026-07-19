@@ -1,7 +1,11 @@
+#[cfg(feature = "lz4")]
 use std::sync::Arc;
+#[cfg(feature = "lz4")]
 use std::thread;
+#[cfg(feature = "lz4")]
 use ziftsieve::{CompressedIndexBuilder, CompressionFormat};
 
+#[cfg(feature = "lz4")]
 fn spawn_extractors<F>(data: Arc<Vec<u8>>, format: CompressionFormat, check: F)
 where
     F: Fn(Result<ziftsieve::CompressedIndex, ziftsieve::ZiftError>) + Send + Sync + 'static,

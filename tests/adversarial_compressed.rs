@@ -30,6 +30,7 @@ use ziftsieve::{CompressedIndexBuilder, StreamingIndexBuilder};
 // ── Test Helpers ─────────────────────────────────────────────────────────
 
 /// Build a minimal LZ4 block stream with uncompressed flag.
+#[cfg(feature = "lz4")]
 fn make_uncompressed_lz4_block(data: &[u8]) -> Vec<u8> {
     let size = (data.len() as u32) | 0x8000_0000;
     let mut out = size.to_le_bytes().to_vec();

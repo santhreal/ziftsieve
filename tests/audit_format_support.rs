@@ -864,6 +864,7 @@ fn audit_all_formats_reject_ones() {
 // Test Helpers
 // ============================================================================
 
+#[cfg(feature = "lz4")]
 fn create_lz4_raw_block(data: &[u8]) -> Vec<u8> {
     let mut result = Vec::new();
 
