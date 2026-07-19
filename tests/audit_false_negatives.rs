@@ -664,8 +664,3 @@ fn lz4_compress(data: &[u8]) -> Vec<u8> {
     }
     compressed
 }
-
-#[cfg(not(feature = "lz4"))]
-fn lz4_compress(data: &[u8]) -> Vec<u8> {
-    data.to_vec()
-}
