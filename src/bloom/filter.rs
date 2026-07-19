@@ -282,7 +282,8 @@ impl BloomFilter {
         if num_bits == 0 {
             return Err(ZiftError::InvalidData {
                 offset: 0,
-                reason: "BloomFilter requires at least 1 bit. Fix: pass a non-empty bit vector".to_string(),
+                reason: "BloomFilter requires at least 1 bit. Fix: pass a non-empty bit vector"
+                    .to_string(),
             });
         }
         Ok(Self {

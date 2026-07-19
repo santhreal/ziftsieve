@@ -66,7 +66,9 @@ pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<bool, Z
         if *pos + 4 > data.len() {
             return Err(ZiftError::InvalidData {
                 offset: *pos,
-                reason: "truncated frame header after skippable frame. Fix: use a complete Zstd stream".to_string(),
+                reason:
+                    "truncated frame header after skippable frame. Fix: use a complete Zstd stream"
+                        .to_string(),
             });
         }
 
@@ -86,7 +88,8 @@ pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<bool, Z
             if *pos + 8 > data.len() {
                 return Err(ZiftError::InvalidData {
                     offset: *pos,
-                    reason: "truncated skippable frame header. Fix: use a complete Zstd stream".to_string(),
+                    reason: "truncated skippable frame header. Fix: use a complete Zstd stream"
+                        .to_string(),
                 });
             }
             let frame_size = usize::try_from(u32::from_le_bytes([
@@ -101,13 +104,15 @@ pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<bool, Z
                 .and_then(|p| p.checked_add(frame_size))
                 .ok_or(ZiftError::InvalidData {
                     offset: *pos,
-                    reason: "skippable frame size overflow. Fix: use a valid Zstd stream".to_string(),
+                    reason: "skippable frame size overflow. Fix: use a valid Zstd stream"
+                        .to_string(),
                 })?;
 
             if *pos > data.len() {
                 return Err(ZiftError::InvalidData {
                     offset: *pos,
-                    reason: "skippable frame extends beyond data. Fix: use a complete Zstd stream".to_string(),
+                    reason: "skippable frame extends beyond data. Fix: use a complete Zstd stream"
+                        .to_string(),
                 });
             }
             continue; // Try again after skipping
@@ -129,7 +134,8 @@ pub(crate) fn parse_standard_frame_header(
     if *pos >= data.len() {
         return Err(ZiftError::InvalidData {
             offset: *pos,
-            reason: "truncated frame header descriptor. Fix: use a complete Zstd stream".to_string(),
+            reason: "truncated frame header descriptor. Fix: use a complete Zstd stream"
+                .to_string(),
         });
     }
 

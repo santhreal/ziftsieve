@@ -64,7 +64,8 @@ fn parse_gzip_header(reader: &mut BitReader<'_>) -> Result<(), ZiftError> {
     if reader.bit_pos != 0 {
         return Err(ZiftError::InvalidData {
             offset: reader.byte_pos,
-            reason: "gzip header must start on byte boundary. Fix: use a valid gzip stream".to_string(),
+            reason: "gzip header must start on byte boundary. Fix: use a valid gzip stream"
+                .to_string(),
         });
     }
 

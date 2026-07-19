@@ -64,6 +64,7 @@ impl FSETable {
         }
     }
 
+    #[allow(dead_code)] // Decoder API surface; used via HuffmanTable::reset.
     pub fn reset(&mut self) {
         self.symbol_counter.clear();
         self.symbol_probabilities.clear();
@@ -81,6 +82,7 @@ impl FSETable {
         Some(bytes_read)
     }
 
+    #[allow(dead_code)] // Decoder API surface for precomputed probability tables.
     pub fn build_from_probabilities(&mut self, acc_log: u8, probs: &[i32]) -> Option<()> {
         if acc_log == 0 {
             return None;
@@ -280,8 +282,7 @@ fn calc_baseline_and_numbits(
     let num_bits = highest_bit_set(slice_width) - 1;
 
     if state_number < num_double_width_state_slices {
-        let baseline =
-            num_single_width_state_slices * slice_width + state_number * slice_width * 2;
+        let baseline = num_single_width_state_slices * slice_width + state_number * slice_width * 2;
         (baseline, num_bits as u8 + 1)
     } else {
         let index_shifted = state_number - num_double_width_state_slices;

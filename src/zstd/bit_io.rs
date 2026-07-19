@@ -178,7 +178,7 @@ impl<'s> BitReaderReversed<'s> {
 mod tests {
     #[test]
     fn reverse_reader_matches_ruzstd() {
-        let data = [0b10101010u8, 0b01010101];
+        let data = [0b1010_1010_u8, 0b0101_0101];
         let mut br = super::BitReaderReversed::new(&data);
         assert_eq!(br.get_bits(1), 0);
         assert_eq!(br.get_bits(1), 1);

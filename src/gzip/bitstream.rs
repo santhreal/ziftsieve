@@ -36,7 +36,9 @@ impl HuffmanDecoder {
         if max > DEFLATE_MAX_BITS {
             return Err(ZiftError::InvalidData {
                 offset: 0,
-                reason: format!("invalid {kind} code length {max} > 15. Fix: use a valid gzip stream"),
+                reason: format!(
+                    "invalid {kind} code length {max} > 15. Fix: use a valid gzip stream"
+                ),
             });
         }
         if max == 0 {
@@ -86,11 +88,13 @@ impl HuffmanDecoder {
             next_code[len] = code.wrapping_add(1);
             let len_u8 = u8::try_from(len).map_err(|_| ZiftError::InvalidData {
                 offset: 0,
-                reason: "huffman code length does not fit in u8. Fix: use a valid gzip stream".to_string(),
+                reason: "huffman code length does not fit in u8. Fix: use a valid gzip stream"
+                    .to_string(),
             })?;
             let symbol_u16 = u16::try_from(symbol).map_err(|_| ZiftError::InvalidData {
                 offset: 0,
-                reason: "huffman symbol does not fit in u16. Fix: use a valid gzip stream".to_string(),
+                reason: "huffman symbol does not fit in u16. Fix: use a valid gzip stream"
+                    .to_string(),
             })?;
             let code_bits = reverse_bits(code, len_u8);
             self.insert(code_bits, len_u8, symbol_u16)?;
@@ -112,7 +116,8 @@ impl HuffmanDecoder {
                 self.nodes[node].children[bit] =
                     i16::try_from(next_idx).map_err(|_| ZiftError::InvalidData {
                         offset: 0,
-                        reason: "invalid huffman tree size. Fix: use a valid gzip stream".to_string(),
+                        reason: "invalid huffman tree size. Fix: use a valid gzip stream"
+                            .to_string(),
                     })?;
                 node = next_idx;
             } else {
@@ -164,7 +169,8 @@ impl HuffmanDecoder {
                 return u16::try_from(self.nodes[node].symbol).map_err(|_| {
                     ZiftError::InvalidData {
                         offset: reader.byte_pos,
-                        reason: "decoded huffman symbol is negative. Fix: use a valid gzip stream".to_string(),
+                        reason: "decoded huffman symbol is negative. Fix: use a valid gzip stream"
+                            .to_string(),
                     }
                 });
             }
@@ -172,7 +178,8 @@ impl HuffmanDecoder {
 
         Err(ZiftError::InvalidData {
             offset: reader.byte_pos,
-            reason: "huffman decode exceeded max symbol length. Fix: use a valid gzip stream".to_string(),
+            reason: "huffman decode exceeded max symbol length. Fix: use a valid gzip stream"
+                .to_string(),
         })
     }
 }
@@ -250,7 +257,9 @@ impl<'a> BitReader<'a> {
         if bits > 32 {
             return Err(ZiftError::InvalidData {
                 offset: self.byte_pos,
-                reason: format!("requested too many bits: {bits} (max 32). Fix: use a valid gzip stream"),
+                reason: format!(
+                    "requested too many bits: {bits} (max 32). Fix: use a valid gzip stream"
+                ),
             });
         }
 

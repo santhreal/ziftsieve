@@ -10,20 +10,21 @@ impl fmt::Display for CompressionFormat {
             Self::Snappy => write!(f, "Snappy"),
             Self::Gzip => write!(f, "Gzip"),
             Self::Zstd => write!(f, "Zstd"),
-            _ => write!(f, "unknown"),
         }
     }
 }
 
 impl CompressionFormat {
     /// Returns the feature flag name for this format.
+    ///
+    /// Used by `#[cfg(not(feature = "..."))]` error paths; unused under `--all-features`.
+    #[allow(dead_code)]
     pub(crate) fn feature_name(self) -> &'static str {
         match self {
             Self::Lz4 => "lz4",
             Self::Snappy => "snappy",
             Self::Gzip => "gzip",
             Self::Zstd => "zstd",
-            _ => "unknown",
         }
     }
 

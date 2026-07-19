@@ -17,8 +17,8 @@
 
 pub(crate) mod bit_io;
 pub(crate) mod decoder;
-pub(crate) mod fse;
 pub(crate) mod frame;
+pub(crate) mod fse;
 pub(crate) mod huffman;
 pub mod streaming;
 
@@ -57,7 +57,8 @@ mod tests {
         let mut data = vec![0x50, 0x2A, 0x4D, 0x18];
         data.extend_from_slice(&[0x04, 0x00, 0x00, 0x00]);
         data.extend_from_slice(b"skip");
-        let blocks = super::extract_literals(&data).expect("skippable-only stream yields no blocks");
+        let blocks =
+            super::extract_literals(&data).expect("skippable-only stream yields no blocks");
         assert!(blocks.is_empty());
     }
 
