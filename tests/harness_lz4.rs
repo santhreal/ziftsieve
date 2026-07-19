@@ -1,3 +1,4 @@
+#![cfg(feature = "lz4")]
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -68,6 +69,7 @@ fn make_compressed_lz4_block(token_stream: &[u8]) -> Vec<u8> {
 
 // ── Correctness: uncompressed blocks ────────────────────────────────────
 
+#[cfg(feature = "lz4")]
 #[test]
 fn uncompressed_single_block_extracts_all_literals() {
     let data = b"ERROR: connection refused";
@@ -79,6 +81,7 @@ fn uncompressed_single_block_extracts_all_literals() {
     assert_eq!(index.get_block(0).unwrap().literals(), data);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn uncompressed_multiple_blocks_separates_correctly() {
     let b1 = b"ERROR in block one";
@@ -94,6 +97,7 @@ fn uncompressed_multiple_blocks_separates_correctly() {
     assert_eq!(index.get_block(2).unwrap().literals(), b3.as_slice());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn uncompressed_empty_data_yields_no_blocks() {
     // Empty LZ4 input is rejected (no valid header).
@@ -109,6 +113,7 @@ fn uncompressed_empty_data_yields_no_blocks() {
 
 // ── Correctness: compressed blocks with literal tokens ──────────────────
 
+#[cfg(feature = "lz4")]
 #[test]
 fn compressed_block_short_literal() {
     let literal = b"hello";
@@ -121,6 +126,7 @@ fn compressed_block_short_literal() {
     assert_eq!(index.get_block(0).unwrap().literals(), literal.as_slice());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn compressed_block_extended_literal() {
     // Literal length > 15 triggers extended encoding
@@ -133,6 +139,7 @@ fn compressed_block_extended_literal() {
     assert_eq!(index.get_block(0).unwrap().literals(), literal.as_slice());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn compressed_block_very_long_literal() {
     // Literal requiring multiple extension bytes (> 15 + 255*N)
@@ -147,6 +154,7 @@ fn compressed_block_very_long_literal() {
 
 // ── Correctness: literal with match reference ───────────────────────────
 
+#[cfg(feature = "lz4")]
 #[test]
 fn literal_followed_by_match_extracts_only_literal() {
     // Token: literal_len=3, match_len=4 (min match)
@@ -165,6 +173,7 @@ fn literal_followed_by_match_extracts_only_literal() {
 
 // ── Bloom filter integration ────────────────────────────────────────────
 
+#[cfg(feature = "lz4")]
 #[test]
 fn bloom_filter_finds_pattern_in_correct_block() {
     let b1 = b"ERROR: disk full";
@@ -191,6 +200,7 @@ fn bloom_filter_finds_pattern_in_correct_block() {
     assert!(!index.get_block(2).unwrap().verify_contains(b"ERROR"));
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn bloom_filter_empty_pattern_returns_all_blocks() {
     let data = make_uncompressed_lz4_blocks(&[b"one", b"two", b"three"]);
@@ -201,6 +211,7 @@ fn bloom_filter_empty_pattern_returns_all_blocks() {
     assert_eq!(candidates.len(), 3);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn bloom_stats_populated_after_build() {
     let data = make_uncompressed_lz4_blocks(&[b"block with enough data for stats"]);
@@ -218,6 +229,7 @@ fn bloom_stats_populated_after_build() {
 
 // ── Adversarial: malformed LZ4 data ─────────────────────────────────────
 
+#[cfg(feature = "lz4")]
 #[test]
 fn truncated_block_header() {
     // Only 3 bytes, block header needs 4
@@ -228,6 +240,7 @@ fn truncated_block_header() {
     assert_eq!(result.unwrap().block_count(), 0);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn block_size_exceeds_data() {
     // Block header claims 1000 bytes but only 10 exist
@@ -237,6 +250,7 @@ fn block_size_exceeds_data() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn block_size_exceeds_max() {
     // Block header claims > 4MB (MAX_BLOCK_SIZE)
@@ -246,6 +260,7 @@ fn block_size_exceeds_max() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn zero_size_block_is_end_marker() {
     let data = [0u8; 4]; // size = 0 = end marker
@@ -255,6 +270,7 @@ fn zero_size_block_is_end_marker() {
     assert_eq!(index.block_count(), 0);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn compressed_block_with_truncated_literal() {
     // Token claims 5 literal bytes but block only has 2
@@ -266,6 +282,7 @@ fn compressed_block_with_truncated_literal() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn compressed_block_with_truncated_match_offset() {
     // Token: literal=1, match=1. Literal byte present. Match offset truncated.
@@ -277,6 +294,7 @@ fn compressed_block_with_truncated_match_offset() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn compressed_block_with_truncated_length_extension() {
     // Token with literal_len=15, then extension byte is missing
@@ -287,6 +305,7 @@ fn compressed_block_with_truncated_length_extension() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn all_0xff_bytes_dont_panic() {
     let data = vec![0xFF; 1024];
@@ -295,6 +314,7 @@ fn all_0xff_bytes_dont_panic() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn all_zeros_dont_panic() {
     let data = vec![0x00; 1024];
@@ -303,6 +323,7 @@ fn all_zeros_dont_panic() {
     assert!(result.is_ok());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn random_noise_doesnt_panic() {
     // Pseudo-random bytes generated deterministically
@@ -318,6 +339,7 @@ fn random_noise_doesnt_panic() {
 
 // ── Streaming builder ───────────────────────────────────────────────────
 
+#[cfg(feature = "lz4")]
 #[test]
 fn streaming_builder_matches_batch() {
     let b1 = make_uncompressed_lz4_block(b"first block data");
@@ -346,6 +368,7 @@ fn streaming_builder_matches_batch() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn streaming_builder_empty_finalize() {
     let streaming = ziftsieve::StreamingIndexBuilder::new(CompressionFormat::Lz4);
@@ -355,6 +378,7 @@ fn streaming_builder_empty_finalize() {
 
 // ── Candidate block iterator ────────────────────────────────────────────
 
+#[cfg(feature = "lz4")]
 #[test]
 fn candidate_blocks_iter_matches_vec() {
     let data = make_uncompressed_lz4_blocks(&[b"ERROR here", b"WARNING there", b"INFO that"]);
@@ -371,6 +395,7 @@ fn candidate_blocks_iter_matches_vec() {
 
 // ── verify_contains edge cases ──────────────────────────────────────────
 
+#[cfg(feature = "lz4")]
 #[test]
 fn verify_contains_pattern_longer_than_literals() {
     let data = make_uncompressed_lz4_block(b"hi");
@@ -383,6 +408,7 @@ fn verify_contains_pattern_longer_than_literals() {
         .verify_contains(b"this is way longer than hi"));
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn verify_contains_single_byte_pattern() {
     let data = make_uncompressed_lz4_block(b"abcdef");
@@ -393,6 +419,7 @@ fn verify_contains_single_byte_pattern() {
     assert!(!index.get_block(0).unwrap().verify_contains(b"z"));
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn verify_contains_pattern_at_boundaries() {
     let data = make_uncompressed_lz4_block(b"startmiddleend");

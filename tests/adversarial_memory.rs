@@ -1,5 +1,7 @@
+#[cfg(feature = "lz4")]
 use ziftsieve::{CompressedIndexBuilder, CompressionFormat};
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_lz4_memory_limit() {
     let data = vec![0x10, 0x00, 0x00, 0x00];

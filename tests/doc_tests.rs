@@ -1,4 +1,5 @@
 /// Ensure that compression enums derive traits correctly
+#[cfg(feature = "lz4")]
 #[test]
 fn doc_test_compression_format() {
     let f = ziftsieve::CompressionFormat::Lz4;

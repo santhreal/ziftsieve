@@ -2,6 +2,7 @@
 //!
 //! Tests that verify the documented false negative risks and edge cases.
 
+#[cfg(feature = "lz4")]
 use ziftsieve::{extract_from_bytes, CompressedIndexBuilder, CompressionFormat};
 
 // ============================================================================
@@ -122,6 +123,7 @@ fn audit_pattern_longer_than_literals() {
     let _ = might_contain; // Depends on implementation
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_empty_pattern_matches_all() {
     // Empty pattern should match everything (or nothing, depending on design)
@@ -139,6 +141,7 @@ fn audit_empty_pattern_matches_all() {
     assert_eq!(candidates.len(), 0); // No blocks, so no candidates
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_verify_contains_vs_might_contain() {
     // verify_contains is precise, might_contain is approximate
@@ -168,6 +171,7 @@ fn audit_verify_contains_vs_might_contain() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_cross_boundary_match_scenario() {
     // This test documents the cross-block false negative limitation
@@ -187,6 +191,7 @@ fn audit_cross_boundary_match_scenario() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_unicode_pattern_handling() {
     // Unicode patterns in literals
@@ -207,6 +212,7 @@ fn audit_unicode_pattern_handling() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_null_byte_in_pattern() {
     // Patterns containing null bytes
@@ -227,6 +233,7 @@ fn audit_null_byte_in_pattern() {
 // Test 11-20: Verify Contains Edge Cases
 // ============================================================================
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_verify_contains_empty_literals() {
     // Empty LZ4 input is correctly rejected as invalid.
@@ -240,6 +247,7 @@ fn audit_verify_contains_empty_literals() {
     assert_eq!(index.block_count(), 0);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_verify_contains_single_byte() {
     let data = lz4_compress(b"X");
@@ -254,6 +262,7 @@ fn audit_verify_contains_single_byte() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_verify_contains_exact_match() {
     let original = b"EXACTMATCH";
@@ -270,6 +279,7 @@ fn audit_verify_contains_exact_match() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_verify_contains_pattern_longer_than_literals() {
     let data = lz4_compress(b"SHORT");
@@ -284,6 +294,7 @@ fn audit_verify_contains_pattern_longer_than_literals() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_verify_contains_overlapping_patterns() {
     // Data with overlapping pattern occurrences
@@ -301,6 +312,7 @@ fn audit_verify_contains_overlapping_patterns() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_verify_contains_binary_data() {
     // All possible byte values
@@ -319,6 +331,7 @@ fn audit_verify_contains_binary_data() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_verify_contains_repeated_byte() {
     let original = vec![b'A'; 1000];
@@ -337,6 +350,7 @@ fn audit_verify_contains_repeated_byte() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_verify_contains_at_boundaries() {
     // Pattern at start, middle, end
@@ -355,6 +369,7 @@ fn audit_verify_contains_at_boundaries() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_verify_contains_case_sensitivity() {
     let original = b"Hello World";
@@ -372,6 +387,7 @@ fn audit_verify_contains_case_sensitivity() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_literal_density_calculation() {
     // Test literal density through actual extraction
@@ -396,6 +412,8 @@ fn audit_literal_density_calculation() {
 #[cfg(feature = "lz4")]
 fn audit_search_parity_lz4() {
     use lz4_flex::frame::FrameEncoder;
+    #[cfg(feature = "lz4")]
+    #[cfg(feature = "lz4")]
     use std::io::{Read, Write};
 
     let original = b"The quick brown fox jumps over the lazy dog. UNIQUE_PATTERN_12345";
@@ -528,6 +546,7 @@ fn audit_search_parity_snappy() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_candidate_blocks_returns_indices() {
     let index = CompressedIndexBuilder::new(CompressionFormat::Lz4)
@@ -538,6 +557,7 @@ fn audit_candidate_blocks_returns_indices() {
     assert!(candidates.is_empty());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_candidate_blocks_iter_no_allocation() {
     let index = CompressedIndexBuilder::new(CompressionFormat::Lz4)
@@ -629,6 +649,7 @@ fn audit_pattern_length_5_plus() {
 // Test Helpers
 // ============================================================================
 
+#[cfg(feature = "lz4")]
 use std::io::{Read, Write};
 
 #[cfg(feature = "lz4")]

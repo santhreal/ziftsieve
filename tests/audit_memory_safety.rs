@@ -2,7 +2,9 @@
 //!
 //! Tests that verify memory limits, streaming behavior, and crash resilience.
 
+#[cfg(feature = "lz4")]
 use std::io::Write;
+#[cfg(feature = "lz4")]
 use ziftsieve::{
     extract_from_bytes, CompressedIndexBuilder, CompressionFormat, StreamingIndexBuilder,
 };
@@ -11,6 +13,7 @@ use ziftsieve::{
 // Test 1-10: Memory Limits and Zip Bomb Protection
 // ============================================================================
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_decompression_ratio_limit() {
     // Test that 250:1 ratio limit is enforced
@@ -40,6 +43,7 @@ fn audit_lz4_decompression_ratio_limit() {
     assert!(result.is_err() || result.is_ok()); // Either is acceptable, must not panic
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_max_sequences_limit() {
     // Test MAX_SEQUENCES_PER_BLOCK = 100,000 limit
@@ -66,6 +70,7 @@ fn audit_lz4_max_sequences_limit() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_max_blocks_per_stream() {
     // Test MAX_BLOCKS_PER_STREAM = 10,000 limit
@@ -90,6 +95,7 @@ fn audit_lz4_max_blocks_per_stream() {
     assert_eq!(index.block_count(), 100);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_total_literals_limit() {
     // Test MAX_TOTAL_LITERALS = 256MB limit
@@ -109,6 +115,7 @@ fn audit_lz4_total_literals_limit() {
     assert!(result.is_ok());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_block_size_4mb_boundary() {
     // Test 4MB block size boundary
@@ -210,6 +217,7 @@ fn audit_snappy_max_chunk_size() {
 // Test 11-20: Streaming Memory Usage
 // ============================================================================
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_streaming_builder_memory_efficiency() {
     let mut builder = StreamingIndexBuilder::new(CompressionFormat::Lz4);
@@ -226,6 +234,7 @@ fn audit_streaming_builder_memory_efficiency() {
     let _ = index.block_count();
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_streaming_builder_empty_chunks() {
     let mut builder = StreamingIndexBuilder::new(CompressionFormat::Lz4);
@@ -239,6 +248,7 @@ fn audit_streaming_builder_empty_chunks() {
     assert_eq!(index.block_count(), 0);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_streaming_builder_mixed_chunks() {
     let mut builder = StreamingIndexBuilder::new(CompressionFormat::Lz4);
@@ -255,6 +265,7 @@ fn audit_streaming_builder_mixed_chunks() {
     // Should have blocks from valid chunks
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_streaming_builder_config_persistence() {
     let mut builder = StreamingIndexBuilder::new(CompressionFormat::Lz4).expected_items(1000);
@@ -270,6 +281,7 @@ fn audit_streaming_builder_config_persistence() {
 // Test 21-30: Crash Resilience - Malformed Input
 // ============================================================================
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_malformed_lz4_truncated_at_token() {
     // Truncated right after token byte
@@ -279,6 +291,7 @@ fn audit_malformed_lz4_truncated_at_token() {
     assert!(result.is_err() || result.is_ok()); // Must not panic
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_malformed_lz4_truncated_literal() {
     // Claims 5 literals but only provides 2
@@ -288,6 +301,7 @@ fn audit_malformed_lz4_truncated_literal() {
     assert!(result.is_err() || result.is_ok());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_malformed_lz4_truncated_match_offset() {
     // Has token with match, but truncated offset
@@ -297,6 +311,7 @@ fn audit_malformed_lz4_truncated_match_offset() {
     assert!(result.is_err() || result.is_ok());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_malformed_lz4_overflow_length() {
     // Length that would overflow
@@ -371,6 +386,7 @@ fn audit_malformed_snappy_truncated_length() {
     assert!(result.is_err() || result.is_ok());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_all_formats_handle_empty_input() {
     // Empty LZ4 input is correctly rejected as invalid.
@@ -400,6 +416,7 @@ fn audit_all_formats_handle_empty_input() {
 // Test 31-40: Fuzz-Style Random Input
 // ============================================================================
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_fuzz_random_bytes_lz4() {
     // Random bytes should not crash
@@ -444,6 +461,7 @@ fn audit_fuzz_random_bytes_snappy() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_fuzz_all_zeros() {
     let data = vec![0u8; 10000];
@@ -457,6 +475,7 @@ fn audit_fuzz_all_zeros() {
     let _ = extract_from_bytes(CompressionFormat::Snappy, &data);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_fuzz_all_ones() {
     let data = vec![0xFFu8; 10000];
@@ -470,6 +489,7 @@ fn audit_fuzz_all_ones() {
     let _ = extract_from_bytes(CompressionFormat::Snappy, &data);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_fuzz_alternating_bytes() {
     let data: Vec<u8> = (0..10000)
@@ -485,6 +505,7 @@ fn audit_fuzz_alternating_bytes() {
     let _ = extract_from_bytes(CompressionFormat::Snappy, &data);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_fuzz_incremental_bytes() {
     let data: Vec<u8> = (0..10000).map(|i| (i % 256) as u8).collect();
@@ -502,24 +523,28 @@ fn audit_fuzz_incremental_bytes() {
 // Test 41-50: Edge Cases
 // ============================================================================
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_single_byte_input() {
     let result = extract_from_bytes(CompressionFormat::Lz4, b"X");
     assert!(result.is_ok());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_two_byte_input() {
     let result = extract_from_bytes(CompressionFormat::Lz4, b"AB");
     assert!(result.is_ok());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_three_byte_input() {
     let result = extract_from_bytes(CompressionFormat::Lz4, b"ABC");
     assert!(result.is_ok());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_four_byte_input() {
     let result = extract_from_bytes(CompressionFormat::Lz4, b"ABCD");
@@ -529,6 +554,7 @@ fn audit_four_byte_input() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_large_input_handling() {
     // 10MB of data (but compressed)

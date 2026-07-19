@@ -21,11 +21,11 @@
 //! - Scale handling (large data, nested compression, compression bombs)
 //! - Search parity between compressed and decompressed data
 
+#[cfg(feature = "lz4")]
 use std::io::{Read, Write};
-use ziftsieve::{
-    bloom::BloomFilter, extract::CompressedBlock, CompressedIndexBuilder, CompressionFormat,
-    StreamingIndexBuilder,
-};
+use ziftsieve::{bloom::BloomFilter, extract::CompressedBlock, CompressionFormat};
+#[cfg(feature = "lz4")]
+use ziftsieve::{CompressedIndexBuilder, StreamingIndexBuilder};
 
 // ── Test Helpers ─────────────────────────────────────────────────────────
 
@@ -172,6 +172,7 @@ fn format_detection_gzip_magic_bytes() {
 }
 
 // 2. Detect LZ4 by magic bytes (04 22 4D 18)
+#[cfg(feature = "lz4")]
 #[test]
 fn format_detection_lz4_magic_bytes() {
     let lz4_header = [0x04, 0x22, 0x4d, 0x18];
@@ -184,6 +185,7 @@ fn format_detection_lz4_magic_bytes() {
 }
 
 // 3. Detect LZ4 legacy frame by magic bytes (02 21 4C 18)
+#[cfg(feature = "lz4")]
 #[test]
 fn format_detection_lz4_legacy_magic_bytes() {
     let lz4_legacy = [0x02, 0x21, 0x4c, 0x18];
@@ -247,6 +249,7 @@ fn format_detection_truncated_magic_bytes() {
 }
 
 // 9. Data too short for any format detection
+#[cfg(feature = "lz4")]
 #[test]
 fn format_detection_data_too_short() {
     let short = [0x04, 0x22]; // Only 2 bytes, need 4 for LZ4
@@ -604,6 +607,7 @@ fn corrupt_lz4_impossible_literal_length() {
 }
 
 // 26. All zeros as compressed data
+#[cfg(feature = "lz4")]
 #[test]
 fn corrupt_all_zeros_data() {
     let zeros = vec![0u8; 1024];
@@ -637,6 +641,7 @@ fn corrupt_all_zeros_data() {
 }
 
 // 27. Random garbage data
+#[cfg(feature = "lz4")]
 #[test]
 fn corrupt_random_garbage_data() {
     let garbage: Vec<u8> = (0..4096).map(|i| (i * 7 + 13) as u8).collect();
@@ -1144,6 +1149,7 @@ fn search_parity_many_patterns_single_block() {
 }
 
 // 44. Empty pattern returns all blocks
+#[cfg(feature = "lz4")]
 #[test]
 fn search_empty_pattern_returns_all_blocks() {
     let data = make_uncompressed_lz4_block(b"some content");
@@ -1308,6 +1314,7 @@ fn verify_contains_edge_cases() {
 }
 
 // 50. Format display and equality
+#[cfg(feature = "lz4")]
 #[test]
 fn format_display_and_equality() {
     use std::fmt::Write;
@@ -1442,6 +1449,7 @@ fn adversarial_zstd_skippable_frames() {
 }
 
 // 55. CompressionFormat to_string consistency
+#[cfg(feature = "lz4")]
 #[test]
 fn compression_format_to_string() {
     let gzip_str = format!("{}", CompressionFormat::Gzip);

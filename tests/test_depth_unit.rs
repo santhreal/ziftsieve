@@ -1,10 +1,11 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::error::Error;
-use ziftsieve::{
-    CompressedBlock, CompressedIndexBuilder, CompressionFormat, StreamingIndexBuilder,
-};
+use ziftsieve::CompressedBlock;
+#[cfg(feature = "lz4")]
+use ziftsieve::{CompressedIndexBuilder, CompressionFormat, StreamingIndexBuilder};
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_compressed_index_builder_lz4() -> Result<(), Box<dyn Error>> {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4)
@@ -31,6 +32,7 @@ fn test_compressed_index_builder_lz4() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_streaming_index_builder_lz4() -> Result<(), Box<dyn Error>> {
     let mut builder = StreamingIndexBuilder::new(CompressionFormat::Lz4).expected_items(1000);

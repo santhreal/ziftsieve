@@ -13,7 +13,9 @@
 //!
 //! These tests verify end-to-end functionality with real compressed data.
 
-use ziftsieve::{bloom::BloomFilter, CompressedBlock, CompressionFormat};
+#[cfg(feature = "lz4")]
+use ziftsieve::CompressionFormat;
+use ziftsieve::{bloom::BloomFilter, CompressedBlock};
 
 #[test]
 fn test_bloom_filter_basic() {
@@ -102,6 +104,7 @@ fn test_bloom_clear() {
     assert!(!bloom.may_contain(b"test"));
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_compression_format_display() {
     assert_eq!(format!("{}", CompressionFormat::Lz4), "LZ4");
@@ -154,6 +157,7 @@ fn test_scan_tarball_literals_and_bloom_from_literals() {
     assert!(bloom.maybe_contains(sample_pair[0], sample_pair[1]));
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_end_to_end_search() {
     // Create data with distinct blocks

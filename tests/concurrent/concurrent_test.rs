@@ -27,6 +27,7 @@ where
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_concurrent_extraction_lz4() {
     // Valid LZ4 end-of-frame marker (produces empty blocks)
@@ -78,6 +79,7 @@ fn test_concurrent_extraction_zstd() {
     });
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_concurrent_memory_limits() {
     let data = Arc::new(vec![0; 100]);
@@ -98,6 +100,7 @@ fn test_concurrent_memory_limits() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_concurrent_malformed_data() {
     let data = Arc::new(vec![0xFF; 1024]);
@@ -157,6 +160,7 @@ fn test_concurrent_truncated_zstd() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_concurrent_streaming_malformed_data() {
     let data = Arc::new(vec![0xFF; 1024]);

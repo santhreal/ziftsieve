@@ -1,5 +1,7 @@
+#[cfg(feature = "lz4")]
 use ziftsieve::{CompressedIndexBuilder, CompressionFormat};
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_lz4_truncated_stream() {
     let mut data = (4000u32).to_le_bytes().to_vec();
@@ -77,6 +79,7 @@ fn test_gzip_corrupted_header() {
     assert!(result.is_ok() || result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_lz4_corrupted_header() {
     // Missing block size (only 2 bytes)

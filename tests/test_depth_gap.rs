@@ -1,8 +1,11 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+#[cfg(feature = "lz4")]
 use faultkit::{inject_scoped, Fault};
+#[cfg(feature = "lz4")]
 use ziftsieve::{CompressedBlock, CompressedIndexBuilder, CompressionFormat};
 
+#[cfg(feature = "lz4")]
 #[test]
 #[should_panic(expected = "literal density should logically be bounded by compressed size")]
 fn test_gap_literal_density_unknown_uncompressed_len() {
@@ -16,6 +19,8 @@ fn test_gap_literal_density_unknown_uncompressed_len() {
     );
 }
 
+#[cfg(feature = "lz4")]
+#[cfg(feature = "lz4")]
 #[test]
 #[should_panic(expected = "Engine should fail gracefully on allocation failure, but succeeded")]
 fn test_gap_oom_injection_lz4() {

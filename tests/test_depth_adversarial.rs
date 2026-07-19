@@ -1,8 +1,11 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+#[cfg(feature = "lz4")]
 use std::error::Error;
+#[cfg(feature = "lz4")]
 use ziftsieve::{CompressedIndexBuilder, CompressionFormat, StreamingIndexBuilder};
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_adversarial_empty_input() -> Result<(), Box<dyn Error>> {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
@@ -11,6 +14,7 @@ fn test_adversarial_empty_input() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_adversarial_null_bytes() -> Result<(), Box<dyn Error>> {
     let nulls = vec![0; 10000];
@@ -26,6 +30,7 @@ fn test_adversarial_null_bytes() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_adversarial_all_ones() -> Result<(), Box<dyn Error>> {
     let ones = vec![0xFF; 10000];
@@ -40,6 +45,7 @@ fn test_adversarial_all_ones() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_adversarial_streaming_corrupt_chunks() -> Result<(), Box<dyn Error>> {
     let mut builder = StreamingIndexBuilder::new(CompressionFormat::Lz4);
@@ -56,6 +62,7 @@ fn test_adversarial_streaming_corrupt_chunks() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_adversarial_huge_input() -> Result<(), Box<dyn Error>> {
     // Over 1.2MB of valid-looking lz4 blocks to test huge buffers.
@@ -74,6 +81,7 @@ fn test_adversarial_huge_input() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_adversarial_unicode() -> Result<(), Box<dyn Error>> {
     let unicode_str = "こんにちは世界, this is 🦊 trying to break it. 𠜎𠜱𠝹";
@@ -93,6 +101,7 @@ fn test_adversarial_unicode() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_adversarial_integer_overflow_boundary() -> Result<(), Box<dyn Error>> {
     // We try to trigger an integer overflow by crafting a block header with the maximum
@@ -115,6 +124,7 @@ fn test_adversarial_integer_overflow_boundary() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_adversarial_extreme_size() -> Result<(), Box<dyn Error>> {
     // We construct a seemingly large frame header or block header
@@ -133,6 +143,7 @@ fn test_adversarial_extreme_size() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_adversarial_io_error_injection() -> Result<(), Box<dyn Error>> {
     let data = vec![
@@ -174,6 +185,7 @@ fn test_adversarial_io_error_injection() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_concurrent_stress() {
     use std::sync::Arc;
@@ -210,6 +222,7 @@ fn test_concurrent_stress() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_adversarial_boundaries() {
     let cases: Vec<Vec<u8>> = vec![
@@ -241,6 +254,7 @@ fn test_adversarial_boundaries() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_integer_overflows() {
     // Tests meant to probe exact integer boundaries and buffer limits
@@ -272,6 +286,7 @@ fn test_integer_overflows() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_integer_overflow_truncation_probes() {
     let mut data = vec![0x04, 0x22, 0x4D, 0x18, 0x60, 0x40, 0x82];

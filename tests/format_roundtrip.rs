@@ -1,11 +1,13 @@
 //! Round-trip, malformed, empty, and large-input tests for every supported format.
 
+#[cfg(feature = "lz4")]
 use ziftsieve::{extract_from_bytes, CompressedIndexBuilder, CompressionFormat};
 
 // ============================================================================
 // LZ4
 // ============================================================================
 
+#[cfg(feature = "lz4")]
 #[test]
 fn lz4_empty_input_is_rejected() {
     let result = extract_from_bytes(CompressionFormat::Lz4, b"");
@@ -15,6 +17,7 @@ fn lz4_empty_input_is_rejected() {
     );
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn lz4_truncated_frame_header() {
     // LZ4 magic followed by incomplete header
@@ -23,6 +26,7 @@ fn lz4_truncated_frame_header() {
     assert!(result.is_err(), "truncated frame header should be rejected");
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn lz4_corrupted_token_stream() {
     // Framed LZ4 with a COMPRESSED block containing a token that claims more
@@ -36,6 +40,7 @@ fn lz4_corrupted_token_stream() {
     assert!(result.is_err(), "corrupted token stream should be rejected");
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn lz4_uncompressed_block_roundtrip() {
     let mut data = vec![0x04, 0x22, 0x4d, 0x18, 0x60, 0x40, 0x00];
@@ -51,6 +56,7 @@ fn lz4_uncompressed_block_roundtrip() {
     assert!(!blocks[0].verify_contains(b"xyz"));
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn lz4_large_literal_block() {
     let payload = vec![b'a'; 1024 * 1024];
@@ -320,6 +326,7 @@ mod zstd_tests {
 // Cross-format index builder tests
 // ============================================================================
 
+#[cfg(feature = "lz4")]
 #[test]
 fn index_builder_rejects_malformed_lz4() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);

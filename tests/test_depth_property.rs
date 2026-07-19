@@ -1,11 +1,14 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use proptest::prelude::*;
-use ziftsieve::{CompressedBlock, CompressedIndexBuilder, CompressionFormat};
+use ziftsieve::CompressedBlock;
+#[cfg(feature = "lz4")]
+use ziftsieve::{CompressedIndexBuilder, CompressionFormat};
 
 proptest! {
     // We only test with up to 10KB chunks to keep the test fast, but it tests
     // arbitrary bytes, covering many weird edge cases and invalid formats.
+    #[cfg(feature = "lz4")]
     #[test]
     fn test_property_no_panics_lz4(data in prop::collection::vec(any::<u8>(), 0..10_000)) {
         let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
