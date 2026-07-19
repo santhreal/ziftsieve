@@ -152,6 +152,35 @@ impl StreamingIndexBuilder {
         self
     }
 
+    /// Sets the target false-positive rate used when the bloom filter is sized
+    /// automatically. Ignored when explicit [`bloom_bits`](Self::bloom_bits) and
+    /// [`bloom_hashes`](Self::bloom_hashes) are supplied.
+    #[must_use]
+    pub fn false_positive_rate(mut self, rate: f64) -> Self {
+        self.false_positive_rate = Some(rate);
+        self
+    }
+
+    /// Sets an explicit bloom-filter bit count, overriding automatic sizing.
+    ///
+    /// Only takes effect when paired with [`bloom_hashes`](Self::bloom_hashes);
+    /// supplying one without the other leaves automatic sizing in place.
+    #[must_use]
+    pub fn bloom_bits(mut self, bits: usize) -> Self {
+        self.num_bits = Some(bits);
+        self
+    }
+
+    /// Sets an explicit bloom-filter hash count, overriding automatic sizing.
+    ///
+    /// Only takes effect when paired with [`bloom_bits`](Self::bloom_bits);
+    /// supplying one without the other leaves automatic sizing in place.
+    #[must_use]
+    pub fn bloom_hashes(mut self, hashes: u32) -> Self {
+        self.num_hashes = Some(hashes);
+        self
+    }
+
     /// Process a chunk of compressed data.
     ///
     /// # Example
@@ -220,5 +249,57 @@ impl StreamingIndexBuilder {
             format: self.format,
             blocks: self.blocks,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn block_with_literals(literals: &[u8]) -> CompressedBlock {
+        let mut block = CompressedBlock::new(0, literals.len() as u32);
+        block.literals = literals.to_vec();
+        block
+    }
+
+    #[test]
+    fn streaming_builder_bloom_bits_and_hashes_setters_configure_the_filter() {
+        // Before these setters existed, num_bits/num_hashes were unreachable and
+        // every bloom fell through to automatic sizing. With both set, the block's
+        // filter uses exactly the supplied parameters.
+        let builder = StreamingIndexBuilder::new(CompressionFormat::Lz4)
+            .bloom_bits(2048)
+            .bloom_hashes(7);
+        let bwb = builder.build_block_with_bloom(block_with_literals(b"literals for bloom sizing"));
+        assert_eq!(bwb.bloom.num_bits(), 2048);
+        assert_eq!(bwb.bloom.num_hashes(), 7);
+    }
+
+    #[test]
+    fn streaming_builder_bloom_bits_without_hashes_stays_on_automatic_sizing() {
+        // The explicit path requires BOTH bloom_bits and bloom_hashes; supplying
+        // only one leaves automatic sizing in place.
+        let builder = StreamingIndexBuilder::new(CompressionFormat::Lz4).bloom_bits(2048);
+        let bwb = builder.build_block_with_bloom(block_with_literals(b"literals for bloom sizing"));
+        assert_ne!(bwb.bloom.num_bits(), 2048);
+    }
+
+    #[test]
+    fn streaming_builder_false_positive_rate_setter_is_wired() {
+        // A tighter false-positive rate yields a larger automatically-sized filter
+        // than a looser one for the same literals, proving the setter reaches sizing.
+        let literals = b"literals for bloom sizing comparison";
+        let tight = StreamingIndexBuilder::new(CompressionFormat::Lz4)
+            .false_positive_rate(0.0001)
+            .build_block_with_bloom(block_with_literals(literals));
+        let loose = StreamingIndexBuilder::new(CompressionFormat::Lz4)
+            .false_positive_rate(0.2)
+            .build_block_with_bloom(block_with_literals(literals));
+        assert!(
+            tight.bloom.num_bits() > loose.bloom.num_bits(),
+            "tighter fpr ({}) should allocate more bits than looser ({})",
+            tight.bloom.num_bits(),
+            loose.bloom.num_bits()
+        );
     }
 }

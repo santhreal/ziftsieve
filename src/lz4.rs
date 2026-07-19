@@ -67,11 +67,12 @@ const MAX_SEQUENCES_PER_BLOCK: usize = 100_000;
 ///
 /// Returns `ZiftError::InvalidData` if the block is malformed or exceeds maximum sequences limit.
 pub fn extract_literals(compressed: &[u8], max_output: usize) -> Result<Vec<u8>, ZiftError> {
-    // Pre-allocate with a reasonable estimate: compressed size × 2 or max_output, whichever is smaller.
-    // This reduces reallocations while preventing over-allocation on small inputs.
-    let initial_cap = (compressed.len().saturating_mul(2))
-        .min(max_output)
-        .min(MAX_BLOCK_SIZE);
+    // Literals are copied verbatim out of the compressed block, so their total can
+    // never exceed the compressed length (tokens, offsets, and match-length bytes
+    // consume the rest). Cap the reservation at that true upper bound, further
+    // bounded by the caller's max_output and the per-block ceiling. The old
+    // `compressed.len() * 2` reserved twice the largest possible literal count.
+    let initial_cap = compressed.len().min(max_output).min(MAX_BLOCK_SIZE);
     let mut literals = Vec::with_capacity(initial_cap);
     let mut pos = 0usize;
     let mut sequence_count = 0usize;
@@ -337,7 +338,7 @@ fn parse_frame_header(data: &[u8]) -> Result<usize, ZiftError> {
         });
     }
     if data.len() < 4 || data[..4] != LZ4_FRAME_MAGIC {
-        // Not a framed LZ4 stream — treat as raw block data (legacy format).
+        // Not a framed LZ4 stream (treat as raw block data (legacy format)).
         // Start parsing from offset 0.
         return Ok(0);
     }

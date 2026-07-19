@@ -29,8 +29,11 @@ pub fn extract_literals(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> 
     let mut pos = 0usize;
     let mut total_literals = 0usize;
 
-    // Parse frame header (currently returns unit type)
-    parse_frame_header(data, &mut pos)?;
+    // Parse frame header. When the stream contains only skippable frames it ends
+    // cleanly with no standard frame, so there are no literal blocks to extract.
+    if !parse_frame_header(data, &mut pos)? {
+        return Ok(blocks);
+    }
 
     // Note: header.dict_id indicates dictionary-compressed frames.
     // Dictionary mode requires external dictionary for full decompression.

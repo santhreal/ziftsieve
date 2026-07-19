@@ -17,6 +17,7 @@ pub(crate) fn extract_literals_from_block(data: &[u8]) -> Result<Vec<u8>, ZiftEr
     pos += 1;
 
     let ls_type = ls_header & 0x03;
+    let lhl_code = (ls_header >> 2) & 0x03;
 
     match ls_type {
         0 => {
@@ -69,11 +70,15 @@ pub(crate) fn extract_literals_from_block(data: &[u8]) -> Result<Vec<u8>, ZiftEr
                 }
                 let compressed = &data[pos..pos + compressed_size];
 
-                decode_literals(compressed, regenerated_size)
-                    .ok_or_else(|| ZiftError::InvalidData {
+                // lhlCode 0 uses one Huffman stream; 1, 2, and 3 use four.
+                let num_streams = if lhl_code == 0 { 1 } else { 4 };
+
+                decode_literals(compressed, regenerated_size, num_streams).ok_or_else(|| {
+                    ZiftError::InvalidData {
                         offset: pos,
                         reason: "Huffman literal decoding failed. Fix: use a valid Zstd stream".to_string(),
-                    })
+                    }
+                })
             }
         }
         3 => {

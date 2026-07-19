@@ -375,7 +375,7 @@ fn add_regular_file_blocks(
 ) -> Result<bool, ZiftError> {
     let literals = &tar_data[member.content_offset..member.content_offset + member.content_size];
 
-    // Nested `.tar.gz`: require valid gzip, POSIX ustar magic, and a clean tar walk — no silent swallow.
+    // Nested `.tar.gz`: require valid gzip, POSIX ustar magic, and a clean tar walk (no silent swallow).
     if !literals.is_empty() && literals.get(0..2) == Some(&[0x1f, 0x8b]) {
         let tar_inner = decompress_gzip_members(literals)?;
         if first_tar_block_has_ustar_magic(&tar_inner) {

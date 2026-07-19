@@ -1,4 +1,4 @@
-# ziftsieve-fuzz — Technical Spec
+# ziftsieve-fuzz: Technical Spec
 
 ## Overview
 

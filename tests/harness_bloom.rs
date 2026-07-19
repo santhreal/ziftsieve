@@ -9,7 +9,7 @@
     unused_comparisons,
     clippy::ignored_unit_patterns
 )]
-//! Bloom filter test harness — SQLite-level testing.
+//! Bloom filter test harness: SQLite-level testing.
 //!
 //! Tests bloom filter correctness, performance guarantees, and adversarial inputs.
 //! The bloom filter is the core data structure that decides whether blocks are
@@ -61,7 +61,7 @@ fn no_false_negatives_at_capacity() {
 
 #[test]
 fn no_false_negatives_past_capacity() {
-    // Insert 10x expected items — FPR degrades but no false negatives allowed
+    // Insert 10x expected items: FPR degrades but no false negatives allowed
     let n = 100;
     let mut bf = BloomFilter::new(n, 0.01);
     let items: Vec<Vec<u8>> = (0..n * 10)
@@ -104,7 +104,7 @@ fn fpr_within_spec_at_1_percent() {
 #[test]
 fn fpr_within_spec_at_0_1_percent() {
     // FNV-1a double hashing has ~5-6x FPR at low targets. This is a known
-    // limitation — switching to SipHash or xxHash would improve distribution.
+    // limitation (switching to SipHash or xxHash would improve distribution).
     // For now, accept 6x tolerance and track the improvement separately.
     verify_fpr(10_000, 0.001, 6.0);
 
@@ -169,7 +169,7 @@ fn identical_items_inserted_many_times() {
         bf.insert(b"same");
     }
     assert!(bf.may_contain(b"same"));
-    // Fill ratio shouldn't be 100% — duplicate inserts hit same bits
+    // Fill ratio shouldn't be 100%, duplicate inserts hit same bits
     assert!(bf.fill_ratio() < 1.0);
 }
 

@@ -55,7 +55,7 @@ mod gzip_adversarial {
 
     #[test]
     fn break_gzip_zip_bomb_must_fail_closed_at_index_builder() {
-        // Highly compressible payload: tiny gzip on disk, massive logical expansion — must not silently index.
+        // Highly compressible payload: tiny gzip on disk, massive logical expansion (must not silently index).
         let payload = vec![0u8; 8 * 1024 * 1024];
         let mut enc = GzEncoder::new(Vec::new(), Compression::new(9));
         enc.write_all(&payload).unwrap();
@@ -86,7 +86,7 @@ mod gzip_adversarial {
 
     #[test]
     fn break_deflate_instruction_flood_must_hit_safety_cap() {
-        // Highly redundant payload — if the parser walks per-symbol without bounding work, this becomes CPU exhaustion.
+        // Highly redundant payload (if the parser walks per-symbol without bounding work, this becomes CPU exhaustion).
         let payload = vec![b'q'; 12 * 1024 * 1024];
         let mut enc = GzEncoder::new(Vec::new(), Compression::new(1));
         enc.write_all(&payload).unwrap();

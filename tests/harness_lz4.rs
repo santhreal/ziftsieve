@@ -9,7 +9,7 @@
     unused_comparisons,
     clippy::ignored_unit_patterns
 )]
-//! LZ4 parser test harness — adversarial and correctness testing.
+//! LZ4 parser test harness (adversarial and correctness testing).
 //!
 //! The LZ4 parser extracts literals from compressed blocks without decompression.
 //! It must handle every possible malformed input without panicking, and correctly
@@ -220,7 +220,7 @@ fn bloom_stats_populated_after_build() {
 
 #[test]
 fn truncated_block_header() {
-    // Only 3 bytes — block header needs 4
+    // Only 3 bytes, block header needs 4
     let result =
         CompressedIndexBuilder::new(CompressionFormat::Lz4).build_from_bytes(&[0x10, 0x00, 0x00]);
     // Should succeed with 0 blocks (incomplete header = stop parsing)
@@ -313,7 +313,7 @@ fn random_noise_doesnt_panic() {
         data.push((state >> 33) as u8);
     }
     let _ = CompressedIndexBuilder::new(CompressionFormat::Lz4).build_from_bytes(&data);
-    // Don't care about result — just must not panic
+    // Don't care about result, just must not panic
 }
 
 // ── Streaming builder ───────────────────────────────────────────────────
@@ -435,7 +435,7 @@ proptest! {
     ) {
         let _ = CompressedIndexBuilder::new(CompressionFormat::Lz4)
             .build_from_bytes(&data);
-        // Must not panic — result doesn't matter
+        // Must not panic, result doesn't matter
     }
 
     /// verify_contains is consistent with direct search.

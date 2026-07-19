@@ -125,4 +125,49 @@ mod tests {
         let data = [0x00, 0x00, 0x00, 0x00];
         assert!(extract_literals(&data).is_err());
     }
+
+    #[test]
+    fn huffman_literals_buffer_is_reserved_upfront_not_regrown_from_zero() {
+        // Highly compressible input: a long run of one byte becomes a single
+        // literal plus a long back-reference, so the *literal count* is tiny
+        // while the *compressed block* is far larger. A from-zero push loop
+        // would leave `literals.capacity()` at a small power of two (near the
+        // literal count); the upfront `reserve(remaining_bytes)` guarantees
+        // capacity >= the block's compressed length. Asserting the latter proves
+        // the reservation happened and rules out repeated reallocation.
+        let data = vec![b'x'; 100_000];
+        let compressed = gzip_compress(&data, 6);
+        let blocks = extract_literals(&compressed).expect("extract");
+        assert!(!blocks.is_empty(), "expected at least one block");
+
+        let with_literals: Vec<_> = blocks.iter().filter(|b| !b.literals.is_empty()).collect();
+        assert!(
+            !with_literals.is_empty(),
+            "the run must yield at least one literal block"
+        );
+        for block in with_literals {
+            let literal_count = block.literals.len();
+            let compressed_len = block.compressed_len() as usize;
+            // The reserve sizes the buffer to `remaining_bytes` at block-body
+            // start, so capacity lands on the order of the compressed block
+            // length. From-zero doubling for this tiny literal count would cap
+            // out near `MIN_NON_ZERO_CAP` (8 for a Vec<u8>), i.e. an order of
+            // magnitude smaller. Guard that literals really are far fewer than
+            // the compressed bytes, then assert capacity is compressed-block
+            // scale, which a from-zero push loop cannot reach here.
+            assert!(
+                literal_count * 8 < compressed_len,
+                "guard: literals ({literal_count}) must be far fewer than compressed bytes \
+                 ({compressed_len}) for this discriminator to be meaningful"
+            );
+            assert!(
+                block.literals.capacity() >= compressed_len / 2,
+                "literals buffer must be reserved upfront to compressed-block scale \
+                 (>= {} = compressed_len/2), got capacity {} for only {literal_count} literals \
+                 (from-zero regrowth would sit near MIN_NON_ZERO_CAP=8)",
+                compressed_len / 2,
+                block.literals.capacity()
+            );
+        }
+    }
 }

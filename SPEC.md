@@ -1,4 +1,4 @@
-# ziftsieve — Technical Spec
+# ziftsieve: Technical Spec
 
 ## Overview
 
