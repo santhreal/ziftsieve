@@ -360,9 +360,37 @@ fn scan_decompressed_tar_gz_archive(
     Ok(blocks)
 }
 
-/// True when the first 512-byte tar header looks like POSIX ustar (nested `.tar.gz` heuristic).
+/// True when the first 512-byte tar header is structurally valid: POSIX
+/// ustar magic, or any tar variant whose header checksum verifies. Magic-only
+/// detection let non-ustar nested archives bypass the depth limit entirely.
 fn first_tar_block_has_ustar_magic(tar_data: &[u8]) -> bool {
-    tar_data.len() >= TAR_BLOCK_SIZE && tar_data.get(257..262) == Some(b"ustar".as_slice())
+    if tar_data.len() < TAR_BLOCK_SIZE {
+        return false;
+    }
+    let header = &tar_data[..TAR_BLOCK_SIZE];
+    if is_end_of_archive_block(header) {
+        return false;
+    }
+    if tar_data.get(257..262) == Some(b"ustar".as_slice()) {
+        return true;
+    }
+    // v7/GNU-old and other magic-less variants: the header checksum (bytes
+    // 148..156, octal, field counted as spaces) is the validity signal.
+    let Ok(stored) = parse_tar_octal_usize(&header[148..156], 0) else {
+        return false;
+    };
+    let computed: usize = header
+        .iter()
+        .enumerate()
+        .map(|(i, &b)| {
+            if (148..156).contains(&i) {
+                b' ' as usize
+            } else {
+                b as usize
+            }
+        })
+        .sum();
+    computed == stored
 }
 
 fn add_regular_file_blocks(
