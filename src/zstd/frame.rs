@@ -31,7 +31,12 @@ impl BlockType {
 // Frame header information (currently just tracks position after header)
 pub(crate) type FrameHeader = ();
 
-pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<FrameHeader, ZiftError> {
+/// Parses leading skippable frames and, if present, the standard frame header.
+///
+/// Returns `Ok(true)` when a standard Zstd frame header was parsed (block data
+/// follows at `*pos`), or `Ok(false)` when the stream consisted solely of
+/// skippable frames and ended cleanly (no standard frame, so no literal blocks).
+pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<bool, ZiftError> {
     const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
     if data.len() < 4 {
@@ -52,6 +57,12 @@ pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<FrameHe
         }
         iterations += 1;
 
+        // A stream may legitimately end on a skippable-frame boundary: consuming
+        // the final skippable frame lands `pos` exactly at the end, which is a
+        // valid, complete stream with no standard frame to follow.
+        if *pos == data.len() {
+            return Ok(false);
+        }
         if *pos + 4 > data.len() {
             return Err(ZiftError::InvalidData {
                 offset: *pos,
@@ -61,7 +72,8 @@ pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<FrameHe
 
         // Check for standard frame
         if data[*pos..*pos + 4] == ZSTD_MAGIC {
-            return parse_standard_frame_header(data, pos);
+            parse_standard_frame_header(data, pos)?;
+            return Ok(true);
         }
 
         // Check for skippable frame (magic 0x184D2A50-0x184D2A57)
@@ -206,6 +218,15 @@ pub(crate) fn parse_standard_frame_header(
         3 => 8,
         _ => unreachable!(),
     };
+    // Validate the FCS field is actually present before advancing. Blindly adding
+    // fcs_size could push `pos` past the end of the buffer, leaving the block
+    // loop to start from an out-of-bounds offset.
+    if *pos + fcs_size > data.len() {
+        return Err(ZiftError::InvalidData {
+            offset: *pos,
+            reason: "truncated frame content size. Fix: use a complete Zstd stream".to_string(),
+        });
+    }
     *pos += fcs_size;
 
     Ok(())

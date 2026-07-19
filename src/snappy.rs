@@ -65,12 +65,21 @@ fn handle_snappy_chunk(
             current_literals.extend_from_slice(&literals);
         }
         0x01 => {
-            if chunk_data.len() > 4 {
-                current_literals.extend_from_slice(&chunk_data[4..]);
+            // Uncompressed chunk = 4-byte CRC-32C + raw data. A chunk of length
+            // <= 4 has no data after the CRC (or not even a full CRC): it is
+            // malformed. Fail CLOSED instead of silently dropping it (the old
+            // `if len > 4` guard swallowed such a chunk, losing literals with no
+            // signal - mirrors the compressed-chunk `< 4` check above).
+            if chunk_data.len() <= 4 {
+                return Err(ZiftError::InvalidData {
+                    offset: pos,
+                    reason: "uncompressed snappy chunk too short (needs 4-byte CRC + data). Fix: use a valid Snappy stream".to_string(),
+                });
             }
+            current_literals.extend_from_slice(&chunk_data[4..]);
         }
         0xfe | 0xff => {
-            // Padding (0xfe) and stream identifier (0xff) — skip.
+            // Padding (0xfe) and stream identifier (0xff) (skip).
         }
         0x02..=0xfd => {
             return Err(ZiftError::InvalidData {
@@ -227,7 +236,16 @@ fn flush_block(
         u32::try_from(pos - block_start).unwrap_or(u32::MAX),
     );
     block.uncompressed_len = Some(u32::try_from(literals.len()).unwrap_or(u32::MAX));
+    // Move the literals into the block, then restore the streaming buffer's
+    // capacity. `std::mem::take` hands the whole allocation (with its capacity)
+    // to the block and leaves `*literals` empty at capacity 0, so the NEXT chunk
+    // would regrow it from scratch one reallocation at a time. Re-reserving the
+    // just-flushed capacity gives the reused buffer a head start sized to the
+    // previous block, avoiding those repeated reallocations (no copy: the bytes
+    // still move into the block).
+    let flushed_capacity = literals.capacity();
     block.literals = std::mem::take(literals);
+    literals.reserve(flushed_capacity);
     blocks.push(block);
     Ok(new_total)
 }
@@ -247,7 +265,7 @@ fn decode_chunk_len(data: &[u8], start: usize) -> Result<(usize, usize), ZiftErr
     if start + 3 > data.len() {
         return Err(ZiftError::InvalidData {
             offset: start,
-            reason: "truncated chunk length — need 3 bytes for Snappy framing length. Fix: use a complete Snappy stream".to_string(),
+            reason: "truncated chunk length, need 3 bytes for Snappy framing length. Fix: use a complete Snappy stream".to_string(),
         });
     }
 
@@ -291,5 +309,60 @@ mod tests {
         ];
         let result = extract_literals(&data);
         assert!(matches!(result, Err(ZiftError::InvalidData { .. })));
+    }
+
+    #[test]
+    fn uncompressed_chunk_of_only_crc_is_rejected_not_silently_dropped() {
+        // An uncompressed chunk (0x01) of length 4 carries only the CRC-32C and
+        // no data - malformed. It must fail closed (InvalidData), not be
+        // silently skipped (which would drop literals with no signal).
+        let data = [
+            0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59, // Stream identifier
+            0x01, 0x04, 0x00, 0x00, // Uncompressed chunk, length = 4 (CRC only)
+            0xaa, 0xbb, 0xcc, 0xdd, // the 4 CRC bytes, no payload after them
+        ];
+        let result = extract_literals(&data);
+        assert!(
+            matches!(result, Err(ZiftError::InvalidData { .. })),
+            "a 4-byte uncompressed chunk (CRC only, no data) must return InvalidData, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn uncompressed_chunk_with_one_data_byte_is_accepted() {
+        // Guard against over-rejection: length 5 (4-byte CRC + 1 data byte) is
+        // the smallest valid uncompressed chunk and must extract that byte.
+        let data = [
+            0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59, // Stream identifier
+            0x01, 0x05, 0x00, 0x00, // Uncompressed chunk, length = 5
+            0xaa, 0xbb, 0xcc, 0xdd, // 4-byte CRC
+            0x5a, // one data byte
+        ];
+        let blocks = extract_literals(&data).expect("valid single-byte uncompressed chunk");
+        let literals: Vec<u8> = blocks.iter().flat_map(|b| b.literals().to_vec()).collect();
+        assert_eq!(literals, vec![0x5a], "the single data byte must be extracted");
+    }
+
+    #[test]
+    fn flush_block_retains_literals_capacity_for_reuse() {
+        // `flush_block` moves the literals into the block; the streaming buffer
+        // must retain its capacity so the next chunk does not regrow from zero
+        // (the old `std::mem::take` left it at capacity 0).
+        let mut blocks = Vec::new();
+        let mut literals = Vec::with_capacity(4096);
+        literals.extend_from_slice(&[7u8; 100]);
+        let cap_before = literals.capacity();
+
+        let total = flush_block(&mut blocks, &mut literals, 0, 100, 0).expect("flush");
+
+        assert_eq!(total, 100, "returns the new running literal total");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].literals().len(), 100, "the block owns the 100 literals");
+        assert!(literals.is_empty(), "streaming buffer is drained of content");
+        assert!(
+            literals.capacity() >= cap_before,
+            "streaming buffer must retain capacity for reuse (was {cap_before}, now {})",
+            literals.capacity()
+        );
     }
 }

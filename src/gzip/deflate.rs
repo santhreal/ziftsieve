@@ -113,7 +113,9 @@ pub(crate) fn parse_deflate_stream(
         let used_bytes = used_bits.div_ceil(8);
         block.compressed_len = u32::try_from(used_bytes).map_err(|_| ZiftError::BlockTooLarge {
             size: used_bytes,
-            max: usize::MAX,
+            // The limit is the u32 conversion ceiling, not usize::MAX: the error is
+            // raised precisely because used_bytes exceeded u32::MAX.
+            max: u32::MAX as usize,
         })?;
 
         blocks.push(block);
@@ -323,6 +325,17 @@ fn parse_huffman_block_with_limit(
 ) -> Result<bool, ZiftError> {
     let mut had_matches = false;
     let mut instructions = 0usize;
+
+    // Pre-size the literal buffer to the remaining compressed input before the
+    // hot decode loop, so literal pushes below do not repeatedly reallocate from
+    // capacity 0 one byte at a time. The remaining compressed bytes are a
+    // bounded estimate of this block's literal output; the per-literal
+    // MAX_BLOCK_LITERALS cap still guards any growth beyond it.
+    if block.literals.is_empty() {
+        let estimate = reader.remaining_bytes().min(MAX_BLOCK_LITERALS);
+        block.literals.reserve(estimate);
+    }
+
     loop {
         instructions += 1;
         if instructions > max_instructions {

@@ -94,10 +94,10 @@ fn test_bloom_concurrent_read_threads() {
 fn test_builder_massive_input() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
     // 2 MB of zeros: first 4 bytes [0,0,0,0] = end-of-frame marker.
-    // Parsed as raw block data with immediate termination — yields empty index.
+    // Parsed as raw block data with immediate termination (yields empty index).
     let massive_data = vec![0u8; 2 * 1024 * 1024];
     let result = builder.build_from_bytes(&massive_data);
-    // Should not panic or OOM — either returns Ok(empty) or Err.
+    // Should not panic or OOM (either returns Ok(empty) or Err).
     if let Ok(index) = result {
         assert_eq!(
             index.block_count(),
@@ -123,7 +123,7 @@ fn test_builder_massive_input_valid_gzip_empty() {
 
 fn test_builder_truncated_lz4() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
-    // Partial LZ4 frame magic — too short for a valid frame header.
+    // Partial LZ4 frame magic (too short for a valid frame header).
     // Parsed as raw block data (legacy): 3 bytes < 4-byte block header → empty.
     let truncated = vec![0x04, 0x22, 0x4D];
     let result = builder.build_from_bytes(&truncated);

@@ -3,7 +3,7 @@ use libfuzzer_sys::fuzz_target;
 use ziftsieve::CompressedIndexBuilder;
 
 fuzz_target!(|data: &[u8]| {
-    // Try each format — must not panic on any input for any format
+    // Try each format, must not panic on any input for any format
     for format in [
         ziftsieve::CompressionFormat::Gzip,
         ziftsieve::CompressionFormat::Lz4,

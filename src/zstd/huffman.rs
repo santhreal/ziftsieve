@@ -1,398 +1,553 @@
 //! Zstd Huffman decoder for compressed literals.
 //!
-//! Zstd uses canonical Huffman coding with these properties:
-//! - Each symbol (0-255) has a weight (0-11)
-//! - Weight 0 = unused symbol
-//! - Weights 1-11 = code length in bits (max 11 bits)
-//! - Codes are assigned canonically: shorter codes first, same-length codes in symbol order
+//! Zstd stores Huffman weights, not code lengths. The number of bits for a
+//! symbol is `max_bits + 1 - weight` where `max_bits` is derived from the Kraft
+//! sum of the weights. The last weight is implied and completes the sum to the
+//! next power of two. Weights may be stored directly (4 bits per weight) or
+//! compressed with FSE.
+//!
+//! Adapted from the `ruzstd` reference implementation (MIT licensed).
 
-/// Huffman decoding table used for Zstd literal reconstruction.
-pub struct Decoder {
-    /// Lookup table: index by code bits, get (symbol, `bits_used`).
-    /// Table size is `2^max_bits` (max 2048 entries for 11-bit codes).
-    table: Vec<(u16, u8)>,
-    /// Maximum code length in bits.
-    max_bits: u8,
+use super::bit_io::BitReaderReversed;
+use super::fse::{FSEDecoder, FSETable};
+
+const MAX_MAX_NUM_BITS: u8 = 11;
+
+pub struct HuffmanDecoder<'table> {
+    table: &'table HuffmanTable,
+    pub state: u64,
 }
 
-impl Decoder {
-    /// Build decoder from symbol weights.
-    ///
-    /// `weights[i]` is the weight (0-11) for symbol i.
-    /// Weight 0 means unused. Weights 1-11 are code lengths.
-    ///
-    /// # Parameters
-    ///
-    /// - `weights`: Canonical code weights indexed by symbol.
-    ///
-    /// # Returns
-    ///
-    /// A decoder when the weights form a valid Huffman tree, otherwise `None`.
-    pub fn from_weights(weights: &[u8; 256]) -> Option<Self> {
-        // Find max weight and validate
-        let max_bits = *weights.iter().max()?;
-        if max_bits == 0 || max_bits > 11 {
-            return None;
-        }
-
-        // Count symbols per code length
-        let mut count = [0u32; 12];
-        for &w in weights {
-            if w <= 11 {
-                count[w as usize] += 1;
-            }
-        }
-        count[0] = 0; // Weight 0 doesn't contribute
-
-        // Validate: total codes must be > 0 and <= 256
-        let total: u32 = count.iter().sum();
-        if total == 0 || total > 256 {
-            return None;
-        }
-
-        // Calculate first code for each bit length using canonical Huffman
-        // First code of length n: (first_code[n-1] + count[n-1]) * 2
-        let mut first_code = [0u32; 12];
-        let mut code: u32 = 0;
-        for bits in 1..=max_bits as usize {
-            code = (code + count[bits - 1]) << 1;
-            first_code[bits] = code;
-        }
-
-        // Check Kraft-McMillan inequality (should equal 1.0 for complete tree)
-        // max_bits is at most 11, so precision loss is not a concern for these small values
-        #[allow(clippy::cast_precision_loss)]
-        let kraft: f64 = (1..=max_bits)
-            .map(|b| f64::from(count[b as usize]) / f64::from(1u32 << b))
-            .sum();
-        if !(0.999..=1.001).contains(&kraft) {
-            // Invalid tree
-            return None;
-        }
-
-        // Build fast lookup table
-        let table_size = 1usize << max_bits;
-        let mut table = vec![(0u16, 0u8); table_size];
-
-        // Track next code for each bit length
-        let mut next_code = first_code;
-
-        for (symbol, &weight) in weights.iter().enumerate() {
-            if weight == 0 {
-                continue;
-            }
-            let bits = weight as usize;
-            let base_code = next_code[bits];
-            let num_entries = 1usize << (max_bits as usize - bits);
-
-            // Fill all table entries that start with this code
-            for i in 0..num_entries {
-                let idx = ((base_code as usize) << (max_bits as usize - bits)) | i;
-                table[idx] = (u16::try_from(symbol).unwrap_or(0), weight);
-            }
-            next_code[bits] += 1;
-        }
-
-        Some(Self { table, max_bits })
+impl<'t> HuffmanDecoder<'t> {
+    pub fn new(table: &'t HuffmanTable) -> HuffmanDecoder<'t> {
+        HuffmanDecoder { table, state: 0 }
     }
 
-    /// Decode symbols from bit stream using a bulk bit accumulator.
-    ///
-    /// `data` is the compressed bit stream.
-    /// `num_symbols` is the expected number of symbols to decode.
-    ///
-    /// Uses a u64 accumulator that is refilled in bulk to avoid per-symbol
-    /// bounds checking (reducing ~3 checks per symbol to ~1 per 8 symbols).
-    ///
-    /// # Parameters
-    ///
-    /// - `data`: Huffman-coded bit stream.
-    /// - `num_symbols`: Number of decoded bytes expected from the stream.
-    ///
-    /// # Returns
-    ///
-    /// The decoded bytes on success, or `None` if decoding fails.
-    pub fn decode(&self, data: &[u8], num_symbols: usize) -> Option<Vec<u8>> {
-        let mut result = Vec::with_capacity(num_symbols);
-        let total_bits = data.len() * 8;
+    pub fn decode_symbol(&mut self) -> u8 {
+        self.table.decode[self.state as usize].symbol
+    }
 
-        // Bit accumulator: holds up to 56 bits of pending data.
-        // Refilled when fewer than max_bits remain.
-        let mut acc: u64 = 0;
-        let mut acc_bits: u32 = 0;
-        let mut byte_pos: usize = 0;
-        let max = u32::from(self.max_bits);
-        let table_mask = (1u64 << max) - 1;
+    pub fn init_state(&mut self, br: &mut BitReaderReversed<'_>) -> u8 {
+        let num_bits = self.table.max_num_bits;
+        let new_bits = br.get_bits(num_bits);
+        self.state = new_bits;
+        num_bits
+    }
 
-        while result.len() < num_symbols {
-            // Refill accumulator with full bytes until we have >= max_bits.
-            // Each refill loads up to 7 bytes (56 bits), keeping acc_bits < 64.
-            while acc_bits < max && byte_pos < data.len() {
-                acc |= u64::from(data[byte_pos]) << acc_bits;
-                acc_bits += 8;
-                byte_pos += 1;
+    pub fn next_state(&mut self, br: &mut BitReaderReversed<'_>) -> u8 {
+        let num_bits = self.table.decode[self.state as usize].num_bits;
+        let new_bits = br.get_bits(num_bits);
+
+        self.state <<= num_bits;
+        self.state &= self.table.decode.len() as u64 - 1;
+        self.state |= new_bits;
+        num_bits
+    }
+}
+
+pub struct HuffmanTable {
+    decode: Vec<Entry>,
+    weights: Vec<u8>,
+    pub max_num_bits: u8,
+    bits: Vec<u8>,
+    bit_ranks: Vec<u32>,
+    rank_indexes: Vec<usize>,
+    fse_table: FSETable,
+}
+
+impl HuffmanTable {
+    pub fn new() -> HuffmanTable {
+        HuffmanTable {
+            decode: Vec::new(),
+            weights: Vec::with_capacity(256),
+            max_num_bits: 0,
+            bits: Vec::with_capacity(256),
+            bit_ranks: Vec::with_capacity(11),
+            rank_indexes: Vec::with_capacity(11),
+            fse_table: FSETable::new(255),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.decode.clear();
+        self.weights.clear();
+        self.max_num_bits = 0;
+        self.bits.clear();
+        self.bit_ranks.clear();
+        self.rank_indexes.clear();
+        self.fse_table.reset();
+    }
+
+    /// Read the Huffman tree description from `source`, build the decoding
+    /// table, and return the number of bytes consumed by the tree description.
+    pub fn build_decoder(&mut self, source: &[u8]) -> Option<u32> {
+        self.decode.clear();
+
+        let bytes_used = self.read_weights(source)?;
+        self.build_table_from_weights()?;
+        Some(bytes_used)
+    }
+
+    fn read_weights(&mut self, source: &[u8]) -> Option<u32> {
+        if source.is_empty() {
+            return None;
+        }
+        let header = source[0];
+        let mut bits_read = 8u32;
+
+        match header {
+            0..=127 => {
+                let fse_stream = &source[1..];
+                if header as usize > fse_stream.len() {
+                    return None;
+                }
+
+                let bytes_used_by_fse_header = self.fse_table.build_decoder(fse_stream, 6)?;
+                if bytes_used_by_fse_header > header as usize {
+                    return None;
+                }
+
+                let compressed_start = bytes_used_by_fse_header;
+                let compressed_length = header as usize - bytes_used_by_fse_header;
+
+                let compressed_weights = &fse_stream[compressed_start..];
+                if compressed_weights.len() < compressed_length {
+                    return None;
+                }
+                let compressed_weights = &compressed_weights[..compressed_length];
+                let mut br = BitReaderReversed::new(compressed_weights);
+
+                bits_read += (bytes_used_by_fse_header + compressed_length) as u32 * 8;
+
+                // Skip the zero padding at the end of the last byte of the
+                // bitstream and discard the first 1 found.
+                let mut skipped_bits = 0;
+                loop {
+                    let val = br.get_bits(1);
+                    skipped_bits += 1;
+                    if val == 1 || skipped_bits > 8 {
+                        break;
+                    }
+                }
+                if skipped_bits > 8 {
+                    return None;
+                }
+
+                // The FSE streams for Huffman weights are interleaved: the first
+                // decoder handles even symbols, the second handles odd symbols.
+                let fse_table = &self.fse_table;
+                let mut dec1 = FSEDecoder::new(fse_table);
+                let mut dec2 = FSEDecoder::new(fse_table);
+
+                dec1.init_state(&mut br)?;
+                dec2.init_state(&mut br)?;
+
+                self.weights.clear();
+
+                loop {
+                    let w = dec1.decode_symbol();
+                    self.weights.push(w);
+                    dec1.update_state(&mut br);
+
+                    if br.bits_remaining() <= -1 {
+                        self.weights.push(dec2.decode_symbol());
+                        break;
+                    }
+
+                    let w = dec2.decode_symbol();
+                    self.weights.push(w);
+                    dec2.update_state(&mut br);
+
+                    if br.bits_remaining() <= -1 {
+                        self.weights.push(dec1.decode_symbol());
+                        break;
+                    }
+
+                    if self.weights.len() > 255 {
+                        return None;
+                    }
+                }
             }
+            _ => {
+                // Direct representation: 4 bits per weight.
+                let weights_raw = &source[1..];
+                let num_weights = header - 127;
+                self.weights.resize(num_weights as usize, 0);
 
-            if acc_bits < max {
-                return None; // Not enough bits remaining
+                let bytes_needed = if num_weights % 2 == 0 {
+                    num_weights as usize / 2
+                } else {
+                    (num_weights as usize / 2) + 1
+                };
+
+                if weights_raw.len() < bytes_needed {
+                    return None;
+                }
+
+                for idx in 0..num_weights {
+                    if idx % 2 == 0 {
+                        self.weights[idx as usize] = weights_raw[idx as usize / 2] >> 4;
+                    } else {
+                        self.weights[idx as usize] = weights_raw[idx as usize / 2] & 0x0F;
+                    }
+                    bits_read += 4;
+                }
             }
+        }
 
-            let code = usize::try_from(acc & table_mask).ok()?;
-            let (symbol, bits_used) = self.table[code];
+        let bytes_read = if bits_read % 8 == 0 {
+            bits_read / 8
+        } else {
+            (bits_read / 8) + 1
+        };
+        Some(bytes_read)
+    }
 
-            if bits_used == 0 {
-                return None; // Invalid code
-            }
+    fn build_table_from_weights(&mut self) -> Option<()> {
+        self.bits.clear();
+        self.bits.resize(self.weights.len() + 1, 0);
 
-            let consumed = u32::from(bits_used);
-            // Verify we haven't exceeded total stream (including partial byte)
-            let bit_pos_after =
-                (byte_pos * 8).saturating_sub(acc_bits as usize) + consumed as usize;
-            if bit_pos_after > total_bits {
+        let mut weight_sum: u32 = 0;
+        for w in &self.weights {
+            if *w > MAX_MAX_NUM_BITS {
                 return None;
             }
-
-            // Skip symbols > 255 (corrupt Huffman table) rather than
-            // silently inserting 0 which could cause false negatives.
-            if let Ok(byte) = u8::try_from(symbol) {
-                result.push(byte);
-            }
-            acc >>= consumed;
-            acc_bits -= consumed;
+            weight_sum += if *w > 0 { 1u32 << (*w - 1) } else { 0 };
         }
 
-        Some(result)
+        if weight_sum == 0 {
+            return None;
+        }
+
+        let max_bits = highest_bit_set(weight_sum) as u8;
+        let left_over = (1u32 << max_bits) - weight_sum;
+
+        if !left_over.is_power_of_two() {
+            return None;
+        }
+
+        let last_weight = highest_bit_set(left_over) as u8;
+
+        for symbol in 0..self.weights.len() {
+            let bits = if self.weights[symbol] > 0 {
+                max_bits + 1 - self.weights[symbol]
+            } else {
+                0
+            };
+            self.bits[symbol] = bits;
+        }
+
+        self.bits[self.weights.len()] = max_bits + 1 - last_weight;
+        self.max_num_bits = max_bits;
+
+        if max_bits > MAX_MAX_NUM_BITS {
+            return None;
+        }
+
+        self.bit_ranks.clear();
+        self.bit_ranks.resize((max_bits + 1) as usize, 0);
+        for num_bits in &self.bits {
+            self.bit_ranks[(*num_bits) as usize] += 1;
+        }
+
+        self.decode.clear();
+        self.decode.resize(
+            1 << self.max_num_bits,
+            Entry {
+                symbol: 0,
+                num_bits: 0,
+            },
+        );
+
+        self.rank_indexes.clear();
+        self.rank_indexes.resize((max_bits + 1) as usize, 0);
+
+        self.rank_indexes[max_bits as usize] = 0;
+        for bits in (1..self.rank_indexes.len() as u8).rev() {
+            self.rank_indexes[bits as usize - 1] = self.rank_indexes[bits as usize]
+                + self.bit_ranks[bits as usize] as usize * (1 << (max_bits - bits));
+        }
+
+        if self.rank_indexes[0] != self.decode.len() {
+            return None;
+        }
+
+        for symbol in 0..self.bits.len() {
+            let bits_for_symbol = self.bits[symbol];
+            if bits_for_symbol != 0 {
+                let base_idx = self.rank_indexes[bits_for_symbol as usize];
+                let len = 1 << (max_bits - bits_for_symbol);
+                self.rank_indexes[bits_for_symbol as usize] += len;
+                for idx in 0..len {
+                    self.decode[base_idx + idx].symbol = symbol as u8;
+                    self.decode[base_idx + idx].num_bits = bits_for_symbol;
+                }
+            }
+        }
+
+        Some(())
     }
 }
 
-/// Read up to 16 bits from byte slice at bit position.
-/// Uses little-endian bit order (LSB first) as per Zstd spec.
-#[cfg(test)]
-fn read_bits(data: &[u8], bit_pos: usize, num_bits: u8) -> Option<u16> {
-    if num_bits == 0 || num_bits > 16 {
-        return None;
+impl Default for HuffmanTable {
+    fn default() -> Self {
+        Self::new()
     }
+}
 
-    let byte_idx = bit_pos >> 3;
-    let bit_idx = bit_pos & 7;
+#[derive(Copy, Clone, Debug)]
+struct Entry {
+    symbol: u8,
+    num_bits: u8,
+}
 
-    if byte_idx >= data.len() {
-        return None;
+fn highest_bit_set(x: u32) -> u32 {
+    if x == 0 {
+        return 0;
     }
-
-    // Read bytes and combine in little-endian order
-    let b0 = u32::from(data[byte_idx]);
-    let b1 = u32::from(data.get(byte_idx + 1).copied().unwrap_or(0));
-    let b2 = u32::from(data.get(byte_idx + 2).copied().unwrap_or(0));
-
-    // Create bit stream: bits are read LSB first from each byte
-    // Position 0 = bit 0 of byte 0, position 7 = bit 7 of byte 0,
-    // position 8 = bit 0 of byte 1, etc.
-    let value = b0 | (b1 << 8) | (b2 << 16);
-
-    // Extract bits starting from bit_idx
-    let shift = bit_idx;
-    let mask = (1u32 << num_bits) - 1;
-    // mask is at most 0xFFFF since num_bits <= 16, so this conversion is safe
-    Some(u16::try_from((value >> shift) & mask).unwrap_or(0))
+    u32::BITS - x.leading_zeros()
 }
 
 /// Parses a Huffman tree description from a Zstd literals section.
 ///
-/// # Parameters
-///
-/// - `data`: Bytes beginning at the tree description.
-///
-/// # Returns
-///
-/// A tuple of `(weights, bytes_consumed)` on success, or `None` when the tree
-/// description is invalid or truncated.
+/// Returns the full weights vector (including the implied last weight) and the
+/// number of bytes consumed by the tree description.
 pub fn parse_tree(data: &[u8]) -> Option<([u8; 256], usize)> {
-    if data.is_empty() {
-        return None;
-    }
-
-    let mut pos = 0;
-    let header = data[pos];
-    pos += 1;
-
-    // Header: bit 7 = use 4-bit weights, bits 0-6 = num_weights - 1
-    let num_weights = ((header & 0x7F) as usize) + 1;
-    let use_4bit = (header & 0x80) != 0;
-
-    if num_weights > 256 {
-        return None;
-    }
+    let mut table = HuffmanTable::new();
+    let bytes_read = table.read_weights(data)?;
 
     let mut weights = [0u8; 256];
-
-    if use_4bit {
-        // 2 weights per byte (low nibble first)
-        let bytes_needed = num_weights.div_ceil(2);
-        if pos + bytes_needed > data.len() {
-            return None;
-        }
-
-        for i in 0..num_weights {
-            let byte = data[pos + (i >> 1)];
-            let weight = if i & 1 == 0 { byte & 0x0F } else { byte >> 4 };
-            // Zstd weights are 0-11, but 4-bit can store 0-15
-            weights[i] = weight.min(11);
-        }
-        pos += bytes_needed;
-    } else {
-        // 1 weight per byte
-        if pos + num_weights > data.len() {
-            return None;
-        }
-
-        for i in 0..num_weights {
-            weights[i] = data[pos + i].min(11);
-        }
-        pos += num_weights;
+    for (i, &w) in table.weights.iter().enumerate() {
+        weights[i] = w;
     }
 
-    Some((weights, pos))
+    let mut weight_sum: u32 = 0;
+    for &w in &table.weights {
+        weight_sum += if w > 0 { 1u32 << (w - 1) } else { 0 };
+    }
+    if weight_sum == 0 {
+        return None;
+    }
+
+    let max_bits = highest_bit_set(weight_sum);
+    let left_over = (1u32 << max_bits) - weight_sum;
+    if !left_over.is_power_of_two() {
+        return None;
+    }
+    let last_weight = highest_bit_set(left_over);
+
+    if table.weights.len() >= 256 {
+        return None;
+    }
+    weights[table.weights.len()] = last_weight as u8;
+
+    Some((weights, bytes_read as usize))
+}
+
+/// Decodes one Huffman-coded stream into `out`.
+fn decode_stream(table: &HuffmanTable, stream: &[u8], out: &mut Vec<u8>) -> Option<()> {
+    if stream.is_empty() {
+        return Some(());
+    }
+
+    let mut br = BitReaderReversed::new(stream);
+
+    // Skip the zero padding at the end of the bitstream and discard the first 1.
+    let mut skipped = 0;
+    loop {
+        let val = br.get_bits(1);
+        skipped += 1;
+        if val == 1 || skipped > 8 {
+            break;
+        }
+    }
+    if skipped > 8 {
+        return None;
+    }
+
+    let mut decoder = HuffmanDecoder::new(table);
+    decoder.init_state(&mut br);
+
+    while br.bits_remaining() > -(table.max_num_bits as isize) {
+        out.push(decoder.decode_symbol());
+        decoder.next_state(&mut br);
+    }
+
+    Some(())
 }
 
 /// Decodes Huffman-compressed literals from a Zstd literals section payload.
 ///
-/// `data` contains tree description followed by coded literals.
-/// `num_literals` is the expected number of decoded literals.
-///
-/// # Parameters
-///
-/// - `data`: Tree description followed by the coded literal stream.
-/// - `num_literals`: Number of literal bytes expected in the output.
-///
-/// # Returns
-///
-/// The decoded literals on success, or `None` when decoding fails.
-pub fn decode_literals(data: &[u8], num_literals: usize) -> Option<Vec<u8>> {
-    // Sanity checks to prevent abuse
+/// `data` contains the tree description followed by the coded literal stream(s).
+/// `num_literals` is the expected total number of decoded literals.
+/// `num_streams` is the number of interleaved Huffman streams (1 or 4).
+pub fn decode_literals(data: &[u8], num_literals: usize, num_streams: u8) -> Option<Vec<u8>> {
     if num_literals > 128 * 1024 {
-        // Max Zstd block size
         return None;
     }
     if data.len() > 128 * 1024 {
         return None;
     }
 
-    let (weights, tree_size) = parse_tree(data)?;
+    if num_literals == 0 {
+        return Some(Vec::new());
+    }
 
-    if tree_size >= data.len() {
+    let mut table = HuffmanTable::new();
+    let tree_bytes = table.build_decoder(data)?;
+    if tree_bytes as usize >= data.len() {
         return None;
     }
 
-    let compressed_size = data.len() - tree_size;
-    // Each Huffman symbol takes at least 1 bit.
-    // So the maximum possible number of symbols is compressed_size * 8.
-    // If num_literals is larger than this, the block is invalid.
-    if num_literals > compressed_size * 8 {
+    let payload = &data[tree_bytes as usize..];
+    let mut out = Vec::with_capacity(num_literals);
+
+    if num_streams == 1 {
+        decode_stream(&table, payload, &mut out)?;
+    } else if num_streams == 4 {
+        if payload.len() < 6 {
+            return None;
+        }
+        let jump1 = u16::from_le_bytes([payload[0], payload[1]]) as usize;
+        let jump2 = jump1 + u16::from_le_bytes([payload[2], payload[3]]) as usize;
+        let jump3 = jump2 + u16::from_le_bytes([payload[4], payload[5]]) as usize;
+        let streams_data = &payload[6..];
+        if jump3 > streams_data.len() {
+            return None;
+        }
+
+        let s1 = &streams_data[..jump1];
+        let s2 = &streams_data[jump1..jump2];
+        let s3 = &streams_data[jump2..jump3];
+        let s4 = &streams_data[jump3..];
+
+        decode_stream(&table, s1, &mut out)?;
+        decode_stream(&table, s2, &mut out)?;
+        decode_stream(&table, s3, &mut out)?;
+        decode_stream(&table, s4, &mut out)?;
+    } else {
         return None;
     }
 
-    let decoder = Decoder::from_weights(&weights)?;
-    decoder.decode(&data[tree_size..], num_literals)
+    if out.len() != num_literals {
+        return None;
+    }
+
+    Some(out)
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_read_bits() {
-        // Data: 0xB3 = 0b10110011, 0x55 = 0b01010101
-        // Little-endian bit order: bit 0 is LSB
-        let data = vec![0xB3, 0x55];
-
-        // Read 4 bits starting at bit 0: bits 0-3 of byte 0 = 0b0011 = 3
-        assert_eq!(read_bits(&data, 0, 4), Some(0x3));
-
-        // Read 4 bits starting at bit 4: bits 4-7 of byte 0 = 0b1011 = 11
-        assert_eq!(read_bits(&data, 4, 4), Some(0xB));
-
-        // Read 8 bits starting at bit 4: bits 4-7 of byte 0 + bits 0-3 of byte 1
-        // = 0b1011 + 0b0101 = 0b0101_1011 = 0x5B
-        assert_eq!(read_bits(&data, 4, 8), Some(0x5B));
-
-        // Read across byte boundary: bits 6-7 of byte 0 + bits 0-1 of byte 1
-        // = 0b10 + 0b01 = 0b01_10 = 6
-        assert_eq!(read_bits(&data, 6, 4), Some(6));
-    }
-
-    #[test]
-    fn test_huffman_basic() {
-        // Simple tree: 4 symbols, all with 2-bit codes
-        // Symbol 0 = 00, Symbol 1 = 01, Symbol 2 = 10, Symbol 3 = 11 (MSB-first codes)
-        let mut weights = [0u8; 256];
-        weights[0] = 2;
-        weights[1] = 2;
-        weights[2] = 2;
-        weights[3] = 2;
-
-        let decoder = Decoder::from_weights(&weights).unwrap();
-        assert_eq!(decoder.max_bits, 2);
-
-        // When reading LSB-first, codes appear reversed:
-        // Stream with symbols 0,1,2,3: codes 00,01,10,11 in MSB-first
-        // As byte (MSB-first): 00_01_10_11 = 0b00011011 = 0x1B
-        // Reading LSB-first: 11,10,01,00 = symbols 3,2,1,0
-        let data = vec![0b0001_1011];
-        let decoded_symbols = decoder.decode(&data, 4).unwrap();
-        assert_eq!(decoded_symbols, vec![3, 2, 1, 0]);
-    }
-
-    #[test]
-    fn test_parse_tree_4bit() {
-        // Header: 0x81 = 4-bit mode, 1 weight (0+1)
-        // Actually 0x81 means: 4-bit mode (0x80), 1 weight (0x01+1=2 weights)
-        let data = vec![0x81, 0x12]; // 2 weights: 0x2, 0x1
-
+    fn test_parse_tree_direct_high_nibble_first() {
+        // Direct header: 0x81 = 4-bit mode, 2 explicit weights.
+        // 0x21: high nibble = 2 (weight 0), low nibble = 1 (weight 1).
+        // The third (last) weight is implied to complete the Kraft sum.
+        let data = [0x81, 0x21];
         let (weights, consumed) = parse_tree(&data).unwrap();
         assert_eq!(consumed, 2);
         assert_eq!(weights[0], 2);
         assert_eq!(weights[1], 1);
+        assert_eq!(weights[2], 1);
     }
 
     #[test]
-    fn test_parse_tree_8bit() {
-        // Header: 0x01 = 8-bit mode, 1 weight (0+1=1 weight)
-        let data = vec![0x00, 0x05]; // 1 weight: 5
-
+    fn test_parse_tree_direct_odd_count() {
+        // Header 0x82 = 3 explicit weights. 0x23: high nibble=2 (weight 0),
+        // low nibble=3 (weight 1). 0x40: high nibble=4 (weight 2), low nibble=0 padding.
+        let data = [0x82, 0x23, 0x40];
         let (weights, consumed) = parse_tree(&data).unwrap();
-        assert_eq!(consumed, 2);
-        assert_eq!(weights[0], 5);
+        assert_eq!(consumed, 3);
+        assert_eq!(weights[0], 2);
+        assert_eq!(weights[1], 3);
+        assert_eq!(weights[2], 4);
+        assert_eq!(weights[3], 2);
     }
 
     #[test]
-    fn test_decode_literals_flow() {
-        // Build a simple tree with 2 symbols:
-        // Symbol 0: weight 1 (1-bit code: 0)
-        // Symbol 1: weight 1 (1-bit code: 1)
-        // Tree header: 0x81 (4-bit, 2 weights)
-        // Weights: 0x11 (symbol 0=1, symbol 1=1)
-
-        let mut tree_and_data = vec![0x81, 0x11]; // Tree: 2 weights, both = 1
-                                                  // Encoded data: symbols 1,1,1 (three 1s)
-                                                  // Codes: 0=0, 1=1 (1 bit each, LSB-first)
-                                                  // Stream: bits 1,1,1 = 0b0000_0111 = 0x07
-        tree_and_data.push(0x07);
-
-        let literals = decode_literals(&tree_and_data, 3).unwrap();
-        assert_eq!(literals, vec![1, 1, 1]);
+    fn test_parse_tree_truncated() {
+        // 0x81 requires one more byte for the weights.
+        let data = [0x81];
+        assert!(parse_tree(&data).is_none());
     }
 
     #[test]
-    fn test_decode_literals_bounds_check() {
-        // Tree header: 0x81 (4-bit, 2 weights)
-        // Weights: 0x11 (symbol 0=1, symbol 1=1)
-        let mut tree_and_data = vec![0x81, 0x11];
-        tree_and_data.push(0x07); // 1 byte of compressed data
+    fn test_huffman_table_builds_from_direct_weights() {
+        // 4 symbols, all weight 2. The encoder would write 3 weights; the last is implied.
+        let data = [0x82, 0x22, 0x20]; // explicit weights [2, 2, 2]
+        let mut table = HuffmanTable::new();
+        let bytes = table.build_decoder(&data).unwrap();
+        assert_eq!(bytes, 3);
+        assert_eq!(table.max_num_bits, 3);
+    }
 
-        // compressed_size = 1, max possible literals = 8. Requesting 9 should fail.
-        let literals = decode_literals(&tree_and_data, 9);
-        assert!(literals.is_none());
+    #[test]
+    fn test_decode_literals_truncated_tree() {
+        let data = [0x81]; // missing weight byte
+        assert!(decode_literals(&data, 1, 1).is_none());
+    }
+
+    /// Generate a de Bruijn sequence over `a..z` of order `n`.
+    ///
+    /// The returned cyclic sequence of length `26^n` contains every `n`-gram
+    /// exactly once. Appending the first `n - 1` characters yields a linear
+    /// string with the same property.
+    fn debruijn(k: u8, n: usize) -> Vec<u8> {
+        let k = k as usize;
+        let mut a = vec![0usize; k * n];
+        let mut seq = Vec::with_capacity(k.pow(n as u32));
+
+        fn db(
+            a: &mut [usize],
+            seq: &mut Vec<u8>,
+            t: usize,
+            p: usize,
+            k: usize,
+            n: usize,
+        ) {
+            if t > n {
+                if n % p == 0 {
+                    for i in 1..=p {
+                        seq.push((a[i] as u8) + b'a');
+                    }
+                }
+            } else {
+                a[t] = a[t - p];
+                db(a, seq, t + 1, p, k, n);
+                for j in (a[t - p] + 1)..k {
+                    a[t] = j;
+                    db(a, seq, t + 1, t, k, n);
+                }
+            }
+        }
+
+        db(&mut a, &mut seq, 1, 1, k, n);
+        seq
+    }
+
+    #[test]
+    #[cfg(feature = "zstd")]
+    fn test_huffman_roundtrip_debruijn() {
+        // A de Bruijn sequence of order 3 over a-z contains every 3-gram
+        // exactly once, so zstd cannot find any length-3 matches. The output is
+        // therefore exactly the literals, and Huffman compression is forced
+        // by the small alphabet.
+        let mut data = debruijn(26, 3);
+        let prefix = data[..2].to_vec();
+        data.extend_from_slice(&prefix);
+
+        let compressed = ::zstd::encode_all(&data[..], 3).unwrap();
+        let decompressed = ::zstd::decode_all(&compressed[..]).unwrap();
+        assert_eq!(decompressed, data, "zstd did not roundtrip the input");
+        let blocks = crate::zstd::extract_literals(&compressed).unwrap();
+
+        let mut literals = Vec::with_capacity(data.len());
+        for block in blocks {
+            literals.extend_from_slice(block.literals());
+        }
+
+        assert_eq!(literals, data);
     }
 }

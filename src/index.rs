@@ -175,12 +175,17 @@ impl CompressedIndex {
             return None;
         }
         let total_bits: usize = self.blocks.iter().map(|bwb| bwb.bloom.num_bits()).sum();
-        let total_hashes: u32 = self
+        // Accumulate and divide in u64 space. Summing into a u32 could overflow with
+        // enough blocks, and dividing by `u32::try_from(num_blocks).unwrap_or(u32::MAX)`
+        // silently substituted u32::MAX as the divisor once num_blocks exceeded
+        // u32::MAX, collapsing the average toward zero. The mean is <= the largest
+        // per-block hash count (a u32), so the final cast is lossless.
+        let total_hash_count: u64 = self
             .blocks
             .iter()
-            .map(|bwb| bwb.bloom.num_hashes())
-            .sum::<u32>()
-            / u32::try_from(num_blocks).unwrap_or(u32::MAX);
+            .map(|bwb| u64::from(bwb.bloom.num_hashes()))
+            .sum();
+        let total_hashes: u32 = (total_hash_count / num_blocks as u64) as u32;
         let avg_fill: f64 = self
             .blocks
             .iter()
