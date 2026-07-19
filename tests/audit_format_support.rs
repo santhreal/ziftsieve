@@ -2,13 +2,17 @@
 //!
 //! Tests that all claimed formats (LZ4, gzip, snappy, zstd) work as documented.
 
+#[cfg(feature = "lz4")]
 use std::io::Write;
-use ziftsieve::{extract_from_bytes, CompressedIndexBuilder, CompressionFormat};
+use ziftsieve::CompressionFormat;
+#[cfg(feature = "lz4")]
+use ziftsieve::{extract_from_bytes, CompressedIndexBuilder};
 
 // ============================================================================
 // Test 1-10: LZ4 Format Support
 // ============================================================================
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_frame_format_with_magic() {
     // Valid LZ4 frame with magic number
@@ -28,6 +32,7 @@ fn audit_lz4_frame_format_with_magic() {
     assert!(index.block_count() > 0);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_legacy_frame_format() {
     // Legacy LZ4 frame magic
@@ -36,6 +41,7 @@ fn audit_lz4_legacy_frame_format() {
     assert_eq!(detected, Some(CompressionFormat::Lz4));
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_raw_block_format() {
     // Raw LZ4 blocks without frame header
@@ -47,6 +53,7 @@ fn audit_lz4_raw_block_format() {
     assert!(!blocks.is_empty());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_uncompressed_block() {
     // LZ4 uncompressed block (high bit set in block size)
@@ -61,6 +68,7 @@ fn audit_lz4_uncompressed_block() {
     assert_eq!(blocks[0].literals(), uncompressed_data);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_multiple_blocks() {
     // Multiple LZ4 blocks in single frame
@@ -85,6 +93,7 @@ fn audit_lz4_multiple_blocks() {
     assert_eq!(index.block_count(), 3);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_empty_frame() {
     // Empty LZ4 frame (just header and end marker)
@@ -98,6 +107,7 @@ fn audit_lz4_empty_frame() {
     assert_eq!(index.block_count(), 0);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_block_size_boundary() {
     // Test at 4MB boundary (max block size)
@@ -112,6 +122,7 @@ fn audit_lz4_block_size_boundary() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_exceeds_max_block_size() {
     // Block claiming size > 4MB should be rejected
@@ -124,6 +135,7 @@ fn audit_lz4_exceeds_max_block_size() {
     assert!(result.is_err(), "Should reject block > 4MB");
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_variable_length_encoding() {
     // Test extended literal length encoding
@@ -144,6 +156,7 @@ fn audit_lz4_variable_length_encoding() {
     assert!(!blocks.is_empty());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_lz4_match_resolution_skipped() {
     // Verify that match references are not resolved
@@ -755,6 +768,7 @@ fn audit_format_detection_empty() {
     assert_eq!(CompressionFormat::detect(b""), None);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_format_detection_partial_magic() {
     // Single byte of gzip magic
@@ -764,6 +778,7 @@ fn audit_format_detection_partial_magic() {
     assert_eq!(CompressionFormat::detect(&[0x04, 0x22, 0x4d]), None);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_all_formats_reject_garbage() {
     let garbage: Vec<u8> = (0..256).map(|i| (i * 7 + 13) as u8).collect();
@@ -791,6 +806,7 @@ fn audit_all_formats_reject_garbage() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_all_formats_reject_zeros() {
     let zeros = vec![0u8; 1024];
@@ -817,6 +833,7 @@ fn audit_all_formats_reject_zeros() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_all_formats_reject_ones() {
     let ones = vec![0xffu8; 1024];

@@ -1,5 +1,7 @@
+#[cfg(feature = "lz4")]
 use ziftsieve::{CompressedIndexBuilder, CompressionFormat, StreamingIndexBuilder};
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_lz4_bomb_handling() -> Result<(), Box<dyn std::error::Error>> {
     let mut data = (4000u32).to_le_bytes().to_vec();
@@ -15,6 +17,7 @@ fn test_lz4_bomb_handling() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_lz4_streaming_bomb_handling() -> Result<(), Box<dyn std::error::Error>> {
     let mut data = (4000u32).to_le_bytes().to_vec();

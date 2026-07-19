@@ -12,6 +12,7 @@ fn assert_zift_actionable(err: &ZiftError) {
 
 // --- LZ4 (default feature) ---
 
+#[cfg(feature = "lz4")]
 #[test]
 fn break_lz4_framed_truncated_block_must_error() {
     // Valid frame header (7 bytes) then a block header claiming payload bytes that are missing.
@@ -30,6 +31,7 @@ fn break_lz4_framed_truncated_block_must_error() {
     assert_zift_actionable(&err);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn break_lz4_legacy_block_claims_payload_beyond_buffer() {
     // Legacy stream (no magic): first u32 is compressed size including header? Parser treats as block header.
@@ -38,6 +40,7 @@ fn break_lz4_legacy_block_claims_payload_beyond_buffer() {
     assert_zift_actionable(&err);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn break_lz4_empty_input_errors() {
     let err = extract_from_bytes(CompressionFormat::Lz4, b"").unwrap_err();

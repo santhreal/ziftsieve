@@ -219,6 +219,7 @@ fn audit_bloom_filter_hash_clamping() {
 // Test 11-20: Index-Level FPR Analysis
 // ============================================================================
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_index_fpr_configuration() {
     use ziftsieve::{CompressedIndexBuilder, CompressionFormat};
@@ -234,6 +235,7 @@ fn audit_index_fpr_configuration() {
     assert!(stats.is_none() || stats.is_some());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_index_estimated_fpr() {
     use ziftsieve::{CompressedIndexBuilder, CompressionFormat};
@@ -255,6 +257,7 @@ fn audit_index_estimated_fpr() {
     assert!((0.0..1.0).contains(&fpr));
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_index_bloom_stats_empty() {
     use ziftsieve::{CompressedIndexBuilder, CompressionFormat};
@@ -266,6 +269,7 @@ fn audit_index_bloom_stats_empty() {
     assert!(index.bloom_stats().is_none());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_index_bloom_stats_with_blocks() {
     use ziftsieve::{CompressedIndexBuilder, CompressionFormat};
@@ -290,6 +294,7 @@ fn audit_index_bloom_stats_with_blocks() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn audit_per_block_bloom_filter() {
     use ziftsieve::{CompressedIndexBuilder, CompressionFormat};

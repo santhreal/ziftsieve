@@ -167,6 +167,7 @@ pub fn extract_from_bytes(
     format: CompressionFormat,
     data: &[u8],
 ) -> Result<Vec<CompressedBlock>, ZiftError> {
+    let _ = data;
     match format {
         #[cfg(feature = "lz4")]
         CompressionFormat::Lz4 => lz4::parse_lz4_blocks(data),

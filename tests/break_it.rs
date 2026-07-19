@@ -150,6 +150,7 @@ fn test_builder_malformed_gzip_tarball() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_builder_unsupported_format() {
     // We only have Lz4, Snappy, Gzip, Zstd. If Zstd isn't enabled it might fail.
@@ -178,6 +179,7 @@ fn test_builder_max_bloom_bits() {
 }
 
 // Off-by-one: testing false positive limits and boundary
+#[cfg(feature = "lz4")]
 #[test]
 fn test_builder_zero_false_positive_rate() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4).false_positive_rate(0.0);
@@ -185,6 +187,7 @@ fn test_builder_zero_false_positive_rate() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_builder_extreme_false_positive_rate() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4).false_positive_rate(1.0);
@@ -193,6 +196,7 @@ fn test_builder_extreme_false_positive_rate() {
 }
 
 // Off-by-one boundary
+#[cfg(feature = "lz4")]
 #[test]
 fn test_builder_exact_block_size_boundary() {
     let mut builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
@@ -203,6 +207,7 @@ fn test_builder_exact_block_size_boundary() {
 }
 
 // 8. Unicode edge cases (BOM, overlong sequences, surrogates)
+#[cfg(feature = "lz4")]
 #[test]
 fn test_index_unicode_bom() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
@@ -218,6 +223,7 @@ fn test_index_unicode_bom() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_index_unicode_surrogate() {
     let mut builder = StreamingIndexBuilder::new(CompressionFormat::Lz4);
@@ -229,6 +235,7 @@ fn test_index_unicode_surrogate() {
 }
 
 // 9. Duplicate entries (same key twice, same pattern twice)
+#[cfg(feature = "lz4")]
 #[test]
 fn test_builder_duplicate_chunks() {
     let mut builder = StreamingIndexBuilder::new(CompressionFormat::Lz4);
@@ -253,6 +260,7 @@ fn test_streaming_builder_unlimited_blocks() {
     assert_eq!(idx.block_count(), 0);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_index_bloom_stats_empty() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
@@ -273,6 +281,7 @@ fn test_index_bloom_stats_zero_division() {
     assert_eq!(bf.num_hashes(), 1);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_index_estimated_fpr_empty() {
     let builder = StreamingIndexBuilder::new(CompressionFormat::Lz4);
@@ -306,6 +315,7 @@ fn test_scan_tarball_symlink_rejection() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_candidate_blocks_iter_no_allocation() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
@@ -315,6 +325,7 @@ fn test_candidate_blocks_iter_no_allocation() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_index_get_block_out_of_bounds() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
@@ -324,6 +335,7 @@ fn test_index_get_block_out_of_bounds() {
     }
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_builder_massive_expected_items_streaming() {
     let mut builder = StreamingIndexBuilder::new(CompressionFormat::Lz4).expected_items(usize::MAX);
@@ -334,6 +346,7 @@ fn test_builder_massive_expected_items_streaming() {
     assert_eq!(idx.block_count(), 0);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_streaming_builder_finalize_repeated() {
     let builder = StreamingIndexBuilder::new(CompressionFormat::Lz4);
@@ -372,6 +385,7 @@ fn test_detect_nested_gzip_in_gzip() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_detect_nested_lz4_in_gzip() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Gzip);
@@ -399,6 +413,7 @@ fn test_detect_nested_snappy_in_gzip() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_detect_nested_gzip_in_lz4() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
@@ -418,6 +433,7 @@ fn test_encrypted_content_detection_high_entropy() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_encrypted_content_lz4_high_entropy() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
@@ -435,6 +451,7 @@ fn test_zero_byte_input_gzip() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_zero_byte_input_lz4() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
@@ -464,6 +481,7 @@ fn test_maximally_compressible_input_all_zeros_gzip() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_maximally_compressible_input_all_zeros_lz4() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
@@ -498,6 +516,7 @@ fn test_maximally_incompressible_random_bytes_gzip() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_maximally_incompressible_random_bytes_lz4() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
@@ -538,6 +557,7 @@ fn test_identify_gzip_magic_padded() {
     );
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_identify_lz4_magic_exact() {
     assert_eq!(
@@ -546,6 +566,7 @@ fn test_identify_lz4_magic_exact() {
     );
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_identify_lz4_legacy_magic_exact() {
     assert_eq!(
@@ -554,6 +575,7 @@ fn test_identify_lz4_legacy_magic_exact() {
     );
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_identify_lz4_magic_padded() {
     assert_eq!(
@@ -619,6 +641,7 @@ fn test_identify_one_byte_magic() {
     assert_eq!(CompressionFormat::detect(b"\x1f"), None);
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_identify_partial_lz4_magic() {
     assert_eq!(CompressionFormat::detect(b"\x04\x22\x4d"), None);
@@ -643,6 +666,7 @@ fn test_detect_nested_gzip_in_snappy() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_detect_nested_lz4_in_snappy() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Snappy);
@@ -661,6 +685,7 @@ fn test_detect_nested_zstd_in_snappy() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_detect_nested_snappy_in_lz4() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
@@ -670,6 +695,7 @@ fn test_detect_nested_snappy_in_lz4() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_detect_nested_zstd_in_lz4() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
@@ -679,6 +705,7 @@ fn test_detect_nested_zstd_in_lz4() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_detect_nested_lz4_in_lz4() {
     let builder = CompressedIndexBuilder::new(CompressionFormat::Lz4);
@@ -697,6 +724,7 @@ fn test_detect_compression_ratio_accuracy_detect_from_buffer() {
     );
 }
 
+#[cfg(feature = "lz4")]
 #[test]
 fn test_compression_ratio_accuracy_detect_from_lz4() {
     // A valid LZ4 raw block where we know the uncompressed size and literals.

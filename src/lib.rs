@@ -21,9 +21,12 @@
 //! # How to get started in 3 lines
 //!
 //! ```rust
+//! # #[cfg(feature = "lz4")]
+//! # {
 //! use ziftsieve::{CompressedIndexBuilder, CompressionFormat};
 //! let index = CompressedIndexBuilder::new(CompressionFormat::Lz4).build_from_bytes(b"...").unwrap();
 //! if !index.candidate_blocks(b"my_secret").is_empty() { /* decompress and verify */ }
+//! # }
 //! ```
 //!
 //! # Supported Formats
