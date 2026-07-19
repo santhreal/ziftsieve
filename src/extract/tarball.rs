@@ -316,7 +316,7 @@ fn scan_decompressed_tar_gz_archive(
             break;
         }
 
-        let member = read_tar_member(&tar_data, pos, pos)?;
+        let member = read_tar_member(tar_data, pos, pos)?;
 
         if member.is_symlink {
             return Err(ZiftError::InvalidData {
@@ -340,7 +340,7 @@ fn scan_decompressed_tar_gz_archive(
 
         if member.is_regular_file
             && add_regular_file_blocks(
-                &tar_data,
+                tar_data,
                 &member,
                 pos,
                 depth,

@@ -186,7 +186,8 @@ fn decode_length(data: &[u8], pos: &mut usize, initial: usize) -> Result<usize, 
             .checked_add(byte as usize)
             .ok_or(ZiftError::InvalidData {
                 offset: *pos,
-                reason: "length overflow in variable-length encoding. Fix: use a valid LZ4 stream".to_string(),
+                reason: "length overflow in variable-length encoding. Fix: use a valid LZ4 stream"
+                    .to_string(),
             })?;
 
         if byte < 255 {
@@ -334,7 +335,8 @@ fn parse_frame_header(data: &[u8]) -> Result<usize, ZiftError> {
     if data.is_empty() {
         return Err(ZiftError::InvalidData {
             offset: 0,
-            reason: "empty input is not valid LZ4 data. Fix: provide non-empty LZ4 data".to_string(),
+            reason: "empty input is not valid LZ4 data. Fix: provide non-empty LZ4 data"
+                .to_string(),
         });
     }
     if data.len() < 4 || data[..4] != LZ4_FRAME_MAGIC {

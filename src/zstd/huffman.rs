@@ -68,6 +68,7 @@ impl HuffmanTable {
         }
     }
 
+    #[allow(dead_code)] // Decoder API surface for table reuse.
     pub fn reset(&mut self) {
         self.decode.clear();
         self.weights.clear();
@@ -95,103 +96,100 @@ impl HuffmanTable {
         let header = source[0];
         let mut bits_read = 8u32;
 
-        match header {
-            0..=127 => {
-                let fse_stream = &source[1..];
-                if header as usize > fse_stream.len() {
-                    return None;
-                }
+        if let 0..=127 = header {
+            let fse_stream = &source[1..];
+            if header as usize > fse_stream.len() {
+                return None;
+            }
 
-                let bytes_used_by_fse_header = self.fse_table.build_decoder(fse_stream, 6)?;
-                if bytes_used_by_fse_header > header as usize {
-                    return None;
-                }
+            let bytes_used_by_fse_header = self.fse_table.build_decoder(fse_stream, 6)?;
+            if bytes_used_by_fse_header > header as usize {
+                return None;
+            }
 
-                let compressed_start = bytes_used_by_fse_header;
-                let compressed_length = header as usize - bytes_used_by_fse_header;
+            let compressed_start = bytes_used_by_fse_header;
+            let compressed_length = header as usize - bytes_used_by_fse_header;
 
-                let compressed_weights = &fse_stream[compressed_start..];
-                if compressed_weights.len() < compressed_length {
-                    return None;
-                }
-                let compressed_weights = &compressed_weights[..compressed_length];
-                let mut br = BitReaderReversed::new(compressed_weights);
+            let compressed_weights = &fse_stream[compressed_start..];
+            if compressed_weights.len() < compressed_length {
+                return None;
+            }
+            let compressed_weights = &compressed_weights[..compressed_length];
+            let mut br = BitReaderReversed::new(compressed_weights);
 
-                bits_read += (bytes_used_by_fse_header + compressed_length) as u32 * 8;
+            bits_read += (bytes_used_by_fse_header + compressed_length) as u32 * 8;
 
-                // Skip the zero padding at the end of the last byte of the
-                // bitstream and discard the first 1 found.
-                let mut skipped_bits = 0;
-                loop {
-                    let val = br.get_bits(1);
-                    skipped_bits += 1;
-                    if val == 1 || skipped_bits > 8 {
-                        break;
-                    }
-                }
-                if skipped_bits > 8 {
-                    return None;
-                }
-
-                // The FSE streams for Huffman weights are interleaved: the first
-                // decoder handles even symbols, the second handles odd symbols.
-                let fse_table = &self.fse_table;
-                let mut dec1 = FSEDecoder::new(fse_table);
-                let mut dec2 = FSEDecoder::new(fse_table);
-
-                dec1.init_state(&mut br)?;
-                dec2.init_state(&mut br)?;
-
-                self.weights.clear();
-
-                loop {
-                    let w = dec1.decode_symbol();
-                    self.weights.push(w);
-                    dec1.update_state(&mut br);
-
-                    if br.bits_remaining() <= -1 {
-                        self.weights.push(dec2.decode_symbol());
-                        break;
-                    }
-
-                    let w = dec2.decode_symbol();
-                    self.weights.push(w);
-                    dec2.update_state(&mut br);
-
-                    if br.bits_remaining() <= -1 {
-                        self.weights.push(dec1.decode_symbol());
-                        break;
-                    }
-
-                    if self.weights.len() > 255 {
-                        return None;
-                    }
+            // Skip the zero padding at the end of the last byte of the
+            // bitstream and discard the first 1 found.
+            let mut skipped_bits = 0;
+            loop {
+                let val = br.get_bits(1);
+                skipped_bits += 1;
+                if val == 1 || skipped_bits > 8 {
+                    break;
                 }
             }
-            _ => {
-                // Direct representation: 4 bits per weight.
-                let weights_raw = &source[1..];
-                let num_weights = header - 127;
-                self.weights.resize(num_weights as usize, 0);
+            if skipped_bits > 8 {
+                return None;
+            }
 
-                let bytes_needed = if num_weights % 2 == 0 {
-                    num_weights as usize / 2
-                } else {
-                    (num_weights as usize / 2) + 1
-                };
+            // The FSE streams for Huffman weights are interleaved: the first
+            // decoder handles even symbols, the second handles odd symbols.
+            let fse_table = &self.fse_table;
+            let mut dec1 = FSEDecoder::new(fse_table);
+            let mut dec2 = FSEDecoder::new(fse_table);
 
-                if weights_raw.len() < bytes_needed {
+            dec1.init_state(&mut br)?;
+            dec2.init_state(&mut br)?;
+
+            self.weights.clear();
+
+            loop {
+                let w = dec1.decode_symbol();
+                self.weights.push(w);
+                dec1.update_state(&mut br);
+
+                if br.bits_remaining() <= -1 {
+                    self.weights.push(dec2.decode_symbol());
+                    break;
+                }
+
+                let w = dec2.decode_symbol();
+                self.weights.push(w);
+                dec2.update_state(&mut br);
+
+                if br.bits_remaining() <= -1 {
+                    self.weights.push(dec1.decode_symbol());
+                    break;
+                }
+
+                if self.weights.len() > 255 {
                     return None;
                 }
+            }
+        } else {
+            // Direct representation: 4 bits per weight.
+            let weights_raw = &source[1..];
+            let num_weights = header - 127;
+            self.weights.resize(num_weights as usize, 0);
 
-                for idx in 0..num_weights {
-                    if idx % 2 == 0 {
-                        self.weights[idx as usize] = weights_raw[idx as usize / 2] >> 4;
-                    } else {
-                        self.weights[idx as usize] = weights_raw[idx as usize / 2] & 0x0F;
-                    }
-                    bits_read += 4;
+            let bytes_needed = if num_weights % 2 == 0 {
+                num_weights as usize / 2
+            } else {
+                (num_weights as usize / 2) + 1
+            };
+
+            if weights_raw.len() < bytes_needed {
+                return None;
+            }
+
+            for idx in 0..num_weights {
+                if idx % 2 == 0 {
+                    self.weights[idx as usize] = weights_raw[idx as usize / 2] >> 4;
+                } else {
+                    self.weights[idx as usize] = weights_raw[idx as usize / 2] & 0x0F;
                 }
+                bits_read += 4;
             }
         }
 
@@ -312,6 +310,7 @@ fn highest_bit_set(x: u32) -> u32 {
 ///
 /// Returns the full weights vector (including the implied last weight) and the
 /// number of bytes consumed by the tree description.
+#[allow(dead_code)] // Exercised by unit tests; kept as a public helper.
 pub fn parse_tree(data: &[u8]) -> Option<([u8; 256], usize)> {
     let mut table = HuffmanTable::new();
     let bytes_read = table.read_weights(data)?;
@@ -495,22 +494,13 @@ mod tests {
     /// exactly once. Appending the first `n - 1` characters yields a linear
     /// string with the same property.
     fn debruijn(k: u8, n: usize) -> Vec<u8> {
-        let k = k as usize;
-        let mut a = vec![0usize; k * n];
-        let mut seq = Vec::with_capacity(k.pow(n as u32));
-
-        fn db(
-            a: &mut [usize],
-            seq: &mut Vec<u8>,
-            t: usize,
-            p: usize,
-            k: usize,
-            n: usize,
-        ) {
+        // Classic de Bruijn recursion uses short parameter names by convention.
+        #[allow(clippy::many_single_char_names)]
+        fn db(a: &mut [usize], seq: &mut Vec<u8>, t: usize, p: usize, k: usize, n: usize) {
             if t > n {
                 if n % p == 0 {
-                    for i in 1..=p {
-                        seq.push((a[i] as u8) + b'a');
+                    for &val in a.iter().take(p + 1).skip(1) {
+                        seq.push((val as u8) + b'a');
                     }
                 }
             } else {
@@ -523,6 +513,9 @@ mod tests {
             }
         }
 
+        let k = k as usize;
+        let mut a = vec![0usize; k * n];
+        let mut seq = Vec::with_capacity(k.pow(n as u32));
         db(&mut a, &mut seq, 1, 1, k, n);
         seq
     }

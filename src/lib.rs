@@ -37,6 +37,12 @@
 
 #![warn(missing_docs, clippy::pedantic)]
 #![allow(unknown_lints)]
+// Compression domain: u64 stream offsets / lengths into u32 block indices and bit widths.
+#![allow(clippy::cast_possible_truncation)]
+// Compression domain: bit-reader cursor math uses isize remaining-bits underflows.
+#![allow(clippy::cast_possible_wrap)]
+// Compression domain: FSE probability counters are non-negative by format invariant.
+#![allow(clippy::cast_sign_loss)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 #![forbid(unsafe_code)]

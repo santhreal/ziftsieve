@@ -61,7 +61,9 @@ pub fn extract_literals(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> 
         if members >= 1024 {
             return Err(ZiftError::InvalidData {
                 offset: reader.byte_pos,
-                reason: "too many gzip members, likely malformed input. Fix: use a valid gzip stream".to_string(),
+                reason:
+                    "too many gzip members, likely malformed input. Fix: use a valid gzip stream"
+                        .to_string(),
             });
         }
     }

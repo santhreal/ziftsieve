@@ -168,7 +168,8 @@ fn parse_stored_block(
     if len != (!nlen & 0xFFFF) {
         return Err(ZiftError::InvalidData {
             offset: reader.byte_pos,
-            reason: "stored block length mismatch (LEN != ~NLEN). Fix: use a valid gzip stream".to_string(),
+            reason: "stored block length mismatch (LEN != ~NLEN). Fix: use a valid gzip stream"
+                .to_string(),
         });
     }
 
@@ -194,7 +195,8 @@ fn parse_dynamic_trees(
     if hlit > 286 || hdist > 30 {
         return Err(ZiftError::InvalidData {
             offset: reader.byte_pos,
-            reason: "invalid dynamic Huffman header sizes. Fix: use a valid gzip stream".to_string(),
+            reason: "invalid dynamic Huffman header sizes. Fix: use a valid gzip stream"
+                .to_string(),
         });
     }
 
@@ -252,7 +254,8 @@ fn handle_code_length_symbol(
         0..=15 => {
             let length = u8::try_from(symbol).map_err(|_| ZiftError::InvalidData {
                 offset: reader.byte_pos,
-                reason: "code length symbol does not fit in u8. Fix: use a valid gzip stream".to_string(),
+                reason: "code length symbol does not fit in u8. Fix: use a valid gzip stream"
+                    .to_string(),
             })?;
             lengths[i] = length;
             *prev = length;
@@ -262,7 +265,9 @@ fn handle_code_length_symbol(
             if i == 0 {
                 return Err(ZiftError::InvalidData {
                     offset: reader.byte_pos,
-                    reason: "distance code repetition before any length. Fix: use a valid gzip stream".to_string(),
+                    reason:
+                        "distance code repetition before any length. Fix: use a valid gzip stream"
+                            .to_string(),
                 });
             }
             let repeat = 3 + reader.read_bits_usize(2)?;
@@ -357,12 +362,13 @@ fn parse_huffman_block_with_limit(
                         max: MAX_BLOCK_LITERALS,
                     });
                 }
-                block
-                    .literals
-                    .push(u8::try_from(symbol).map_err(|_| ZiftError::InvalidData {
+                block.literals.push(u8::try_from(symbol).map_err(|_| {
+                    ZiftError::InvalidData {
                         offset: reader.byte_pos,
-                        reason: "literal symbol does not fit in u8. Fix: use a valid gzip stream".to_string(),
-                    })?);
+                        reason: "literal symbol does not fit in u8. Fix: use a valid gzip stream"
+                            .to_string(),
+                    }
+                })?);
             }
             256 => break,
             257..=285 => {
@@ -372,7 +378,9 @@ fn parse_huffman_block_with_limit(
             286 | 287 => {
                 return Err(ZiftError::InvalidData {
                     offset: reader.byte_pos,
-                    reason: "invalid fixed/dynamic literal/length code. Fix: use a valid gzip stream".to_string(),
+                    reason:
+                        "invalid fixed/dynamic literal/length code. Fix: use a valid gzip stream"
+                            .to_string(),
                 })
             }
             _ => {
@@ -400,12 +408,14 @@ fn parse_match(
             usize::try_from(reader.read_bits(u8::try_from(extra_bits).map_err(|_| {
                 ZiftError::InvalidData {
                     offset: reader.byte_pos,
-                    reason: "invalid literal length extra-bits. Fix: use a valid gzip stream".to_string(),
+                    reason: "invalid literal length extra-bits. Fix: use a valid gzip stream"
+                        .to_string(),
                 }
             })?)?)
             .map_err(|_| ZiftError::InvalidData {
                 offset: reader.byte_pos,
-                reason: "literal length extra bits overflow usize. Fix: use a valid gzip stream".to_string(),
+                reason: "literal length extra bits overflow usize. Fix: use a valid gzip stream"
+                    .to_string(),
             })?;
     }
 
@@ -428,7 +438,8 @@ fn parse_match(
             })?)?)
             .map_err(|_| ZiftError::InvalidData {
                 offset: reader.byte_pos,
-                reason: "distance extra bits overflow usize. Fix: use a valid gzip stream".to_string(),
+                reason: "distance extra bits overflow usize. Fix: use a valid gzip stream"
+                    .to_string(),
             })?;
     }
     let _ = (match_length, match_distance);

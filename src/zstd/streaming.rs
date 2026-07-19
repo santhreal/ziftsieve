@@ -73,7 +73,8 @@ pub fn extract_literals(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> 
         if blocks.len() >= 100_000 {
             return Err(ZiftError::InvalidData {
                 offset: pos,
-                reason: "too many blocks (>100K), likely malformed. Fix: use a valid Zstd stream".to_string(),
+                reason: "too many blocks (>100K), likely malformed. Fix: use a valid Zstd stream"
+                    .to_string(),
             });
         }
     }

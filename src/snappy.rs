@@ -39,16 +39,18 @@ fn handle_snappy_chunk(
             if chunk_data.len() < 4 {
                 return Err(ZiftError::InvalidData {
                     offset: pos,
-                    reason: "compressed snappy chunk too short for CRC. Fix: use a valid Snappy stream".to_string(),
+                    reason:
+                        "compressed snappy chunk too short for CRC. Fix: use a valid Snappy stream"
+                            .to_string(),
                 });
             }
             let compressed = &chunk_data[4..];
-            let uncompressed_len = snap::raw::decompress_len(compressed).map_err(|_| {
-                ZiftError::InvalidData {
+            let uncompressed_len =
+                snap::raw::decompress_len(compressed).map_err(|_| ZiftError::InvalidData {
                     offset: pos,
-                    reason: "invalid snappy compressed chunk. Fix: use a valid Snappy stream".to_string(),
-                }
-            })?;
+                    reason: "invalid snappy compressed chunk. Fix: use a valid Snappy stream"
+                        .to_string(),
+                })?;
             if uncompressed_len > MAX_TOTAL_LITERALS {
                 return Err(ZiftError::BlockTooLarge {
                     size: uncompressed_len,
@@ -56,12 +58,14 @@ fn handle_snappy_chunk(
                 });
             }
             let mut decoder = snap::raw::Decoder::new();
-            let literals = decoder.decompress_vec(compressed).map_err(|_| {
-                ZiftError::InvalidData {
-                    offset: pos,
-                    reason: "snappy decompression failed. Fix: use a valid Snappy stream".to_string(),
-                }
-            })?;
+            let literals =
+                decoder
+                    .decompress_vec(compressed)
+                    .map_err(|_| ZiftError::InvalidData {
+                        offset: pos,
+                        reason: "snappy decompression failed. Fix: use a valid Snappy stream"
+                            .to_string(),
+                    })?;
             current_literals.extend_from_slice(&literals);
         }
         0x01 => {
@@ -340,7 +344,11 @@ mod tests {
         ];
         let blocks = extract_literals(&data).expect("valid single-byte uncompressed chunk");
         let literals: Vec<u8> = blocks.iter().flat_map(|b| b.literals().to_vec()).collect();
-        assert_eq!(literals, vec![0x5a], "the single data byte must be extracted");
+        assert_eq!(
+            literals,
+            vec![0x5a],
+            "the single data byte must be extracted"
+        );
     }
 
     #[test]
@@ -357,8 +365,15 @@ mod tests {
 
         assert_eq!(total, 100, "returns the new running literal total");
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].literals().len(), 100, "the block owns the 100 literals");
-        assert!(literals.is_empty(), "streaming buffer is drained of content");
+        assert_eq!(
+            blocks[0].literals().len(),
+            100,
+            "the block owns the 100 literals"
+        );
+        assert!(
+            literals.is_empty(),
+            "streaming buffer is drained of content"
+        );
         assert!(
             literals.capacity() >= cap_before,
             "streaming buffer must retain capacity for reuse (was {cap_before}, now {})",

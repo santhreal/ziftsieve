@@ -244,6 +244,7 @@ impl StreamingIndexBuilder {
     ///
     /// # Errors
     /// Currently always returns `Ok`.
+    #[allow(clippy::unnecessary_wraps)] // Public API keeps Result for future fallibility.
     pub fn finalize(self) -> Result<CompressedIndex, ZiftError> {
         Ok(CompressedIndex {
             format: self.format,
