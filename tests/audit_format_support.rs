@@ -2,8 +2,6 @@
 //!
 //! Tests that all claimed formats (LZ4, gzip, snappy, zstd) work as documented.
 
-#[cfg(feature = "lz4")]
-use std::io::Write;
 use ziftsieve::CompressionFormat;
 #[cfg(feature = "lz4")]
 use ziftsieve::{extract_from_bytes, CompressedIndexBuilder};

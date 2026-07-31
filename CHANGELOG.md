@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-30
+
+### Fixed
+- Removed unused `std::io` imports in test targets so the test suite builds
+  warning-free. No library code changes; audit re-confirmed no false negatives
+  in the literal pre-filter (insert covers all 1-4 byte windows, query uses
+  conservative `any` over 4-byte windows).
+
 ## [0.1.0] - 2026-03-30
 
 ### Added
@@ -21,5 +29,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 3× faster for Snappy
 - O(compressed_size) complexity instead of O(uncompressed_size)
 
-[Unreleased]: https://github.com/santhsecurity/ziftsieve/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/santhsecurity/ziftsieve/releases/tag/v0.1.0
+[Unreleased]: https://github.com/santhreal/ziftsieve/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/santhreal/ziftsieve/releases/tag/v0.1.0

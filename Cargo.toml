@@ -1,16 +1,16 @@
 [package]
 name = "ziftsieve"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.85"
-authors = ["Corum Collective LLC <contact@santh.io>"]
+authors = ["Corum Collective LLC <contact@santh.dev>"]
 license = "MIT"
 description = "Search compressed data without full decompression. Literal extraction and indexing for LZ4, Snappy, Gzip, and Zstd."
 repository = "https://github.com/santhreal/ziftsieve"
 homepage = "https://santh.dev"
 documentation = "https://docs.rs/ziftsieve"
 readme = "README.md"
-keywords = ["compression", "search", "lz4", "zstd", "bloom-filter"]
+keywords = ["compression", "search", "gzip", "zstd", "pattern-matching"]
 categories = ["compression", "algorithms", "text-processing"]
 
 [dependencies]

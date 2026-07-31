@@ -650,7 +650,7 @@ fn audit_pattern_length_5_plus() {
 // ============================================================================
 
 #[cfg(feature = "lz4")]
-use std::io::{Read, Write};
+use std::io::Write;
 
 #[cfg(feature = "lz4")]
 fn lz4_compress(data: &[u8]) -> Vec<u8> {
