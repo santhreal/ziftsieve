@@ -2,7 +2,7 @@
 name = "ziftsieve-fuzz"
 version = "0.0.0"
 edition = "2021"
-repository = "https://github.com/santhsecurity/Santh"
+repository = "https://github.com/santhreal/Santh"
 publish = false
 
 [package.metadata]

@@ -34,6 +34,6 @@ responsible for backporting.
 
 ## Coordinated Disclosure
 
-GHSA advisories are filed under the **santhsecurity** GitHub
+GHSA advisories are filed under the **santhreal** GitHub
 organization. We coordinate CVE assignment via GitHub's CNA when a
 fix ships.

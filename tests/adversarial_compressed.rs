@@ -21,8 +21,6 @@
 //! - Scale handling (large data, nested compression, compression bombs)
 //! - Search parity between compressed and decompressed data
 
-#[cfg(feature = "lz4")]
-use std::io::{Read, Write};
 use ziftsieve::{bloom::BloomFilter, extract::CompressedBlock, CompressionFormat};
 #[cfg(feature = "lz4")]
 use ziftsieve::{CompressedIndexBuilder, StreamingIndexBuilder};
