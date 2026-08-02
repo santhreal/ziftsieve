@@ -215,3 +215,8 @@ mod tests {
         );
     }
 }
+
+/// Compile-checks the README quick-start example as a doctest.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeExamples;

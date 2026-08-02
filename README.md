@@ -12,7 +12,7 @@ Search compressed data without full decompression.
 
 `ziftsieve` extracts literal bytes from compressed blocks and builds indexes over them. This allows skipping decompression for blocks that provably cannot contain a search pattern.
 
-```
+```text
 Traditional:  SSD → Decompress (100GB/s) → Search (10GB/s) = 9GB/s effective
 ziftsieve:    SSD → Search compressed (50GB/s) → Decompress 10% = 45GB/s effective
                                                          
@@ -41,18 +41,29 @@ ziftsieve = { version = "0.1", features = ["lz4", "gzip", "zstd"] }
 ## Usage
 
 ```rust
-use ziftsieve::{CompressionFormat, CompressedIndex};
+use ziftsieve::{CompressionFormat, CompressedIndexBuilder};
 
-// Build index from compressed file
-let data = std::fs::read("logs.lz4")?;
-let index = CompressedIndex::from_bytes(&data, CompressionFormat::Lz4)?;
-
-// Search - only decompresses blocks that might match
-let pattern = b"ERROR";
-for block_id in index.candidate_blocks(pattern) {
-    println!("Potential match in block {}", block_id);
-    // Now decompress just this block to verify
+// Two raw (uncompressed-flagged) LZ4 blocks: size header + payload.
+let block_a = b"ERROR: disk failure\n".repeat(50);
+let block_b = b"INFO: heartbeat ok\n".repeat(50);
+let mut data = Vec::new();
+for chunk in [&block_a[..], &block_b[..]] {
+    let size = chunk.len() as u32 | 0x8000_0000; // uncompressed flag
+    data.extend_from_slice(&size.to_le_bytes());
+    data.extend_from_slice(chunk);
 }
+
+// Build the literal index over the compressed bytes.
+let index = CompressedIndexBuilder::new(CompressionFormat::Lz4)
+    .expected_items(1000)
+    .false_positive_rate(0.01)
+    .build_from_bytes(&data)?;
+
+// Search: only blocks that might match come back.
+let candidates = index.candidate_blocks(b"ERROR");
+assert!(candidates.contains(&0));
+assert!(!index.get_block(1).expect("block 1 exists").verify_contains(b"ERROR"));
+# Ok::<(), ziftsieve::ZiftError>(())
 ```
 
 ## How It Works
@@ -82,7 +93,7 @@ Benchmarks on AMD Ryzen 9 5950X, 1GB log file:
 
 ## Architecture
 
-```
+```text
 Compressed Block
     │
     ├──► Literal Bytes ──► Bloom Filter ──► Index
