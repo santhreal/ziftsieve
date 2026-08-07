@@ -70,6 +70,7 @@ fn make_compressed_lz4_block(token_stream: &[u8]) -> Vec<u8> {
 #[cfg(feature = "gzip")]
 fn gzip_compress(data: &[u8]) -> Vec<u8> {
     use flate2::{write::GzEncoder, Compression};
+    use std::io::Write;
     let mut encoder = GzEncoder::new(Vec::new(), Compression::new(6));
     encoder.write_all(data).expect("gzip write");
     encoder.finish().expect("gzip finish")
@@ -79,6 +80,7 @@ fn gzip_compress(data: &[u8]) -> Vec<u8> {
 #[cfg(feature = "gzip")]
 fn gzip_decompress(data: &[u8]) -> Vec<u8> {
     use flate2::read::GzDecoder;
+    use std::io::Read;
     let mut decoder = GzDecoder::new(data);
     let mut result = Vec::new();
     decoder.read_to_end(&mut result).expect("gzip decompress");

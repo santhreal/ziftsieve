@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::thread;
 use ziftsieve::bloom::BloomFilter;
 use ziftsieve::{CompressedIndexBuilder, CompressionFormat, StreamingIndexBuilder};
+use std::io::{Read, Write};
 
 // 1. Empty input / zero-length slices
 #[test]

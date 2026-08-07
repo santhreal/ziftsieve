@@ -2,8 +2,7 @@
 //!
 //! Tests that verify memory limits, streaming behavior, and crash resilience.
 
-#[cfg(feature = "lz4")]
-use std::io::Write;
+use std::io::{Read, Write};
 #[cfg(feature = "lz4")]
 use ziftsieve::{
     extract_from_bytes, CompressedIndexBuilder, CompressionFormat, StreamingIndexBuilder,

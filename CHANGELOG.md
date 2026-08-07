@@ -10,8 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - README examples were stale or did not compile against the real API. They are rewritten and wired as doctests, so documentation drift now fails `cargo test`.
 
-## [Unreleased]
+## [0.1.3] - 2026-08-07
 
+### Fixed
+- Updated package author to `Santh <64453045+santhreal@users.noreply.github.com>` and declared honest package status as `stable` (fuzz suite present).
+- Fixed missing `std::io::{Read, Write}` trait imports across integration test files, enabling test compilation under `--all-features`.
+- Fixed LZ4 framed block header truncation handling to fail closed with `ZiftError::InvalidData` when incomplete block headers are encountered.
+- Fixed Snappy decompression ratio check to account for unflushed pending literals in the zip bomb ratio limit.
 ## [0.1.1] - 2026-07-30
 
 ### Fixed
