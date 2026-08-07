@@ -1,5 +1,6 @@
 //! Round-trip, malformed, empty, and large-input tests for every supported format.
 
+use std::io::{Read, Write};
 #[cfg(feature = "lz4")]
 use ziftsieve::{extract_from_bytes, CompressedIndexBuilder, CompressionFormat};
 

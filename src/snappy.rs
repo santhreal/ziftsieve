@@ -156,7 +156,7 @@ pub fn extract_literals(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> 
             .len()
             .saturating_mul(MAX_DECOMPRESSION_RATIO)
             .max(1024 * 1024);
-        if total_literals > max_allowed_literals {
+        if total_literals.saturating_add(current_literals.len()) > max_allowed_literals {
             return Err(ZiftError::InvalidData {
                 offset: pos,
                 reason: format!("decompression ratio exceeded limit of {MAX_DECOMPRESSION_RATIO}. Fix: use a non-malicious Snappy stream or increase MAX_DECOMPRESSION_RATIO"),
@@ -379,5 +379,17 @@ mod tests {
             "streaming buffer must retain capacity for reuse (was {cap_before}, now {})",
             literals.capacity()
         );
+    }
+
+    #[test]
+    fn test_snappy_pending_literals_decompression_ratio_checked() {
+        // Ensure that accumulated unflushed literals in current_literals contribute
+        // to the decompression ratio check.
+        let mut current_literals = Vec::new();
+        let mut chunk_data = vec![0u8; 5]; // 4-byte CRC + 1 byte data
+        chunk_data.extend_from_slice(&[0xaa; 100]); // additional data
+        let res = handle_snappy_chunk(0x01, &chunk_data, &mut current_literals, 0);
+        assert!(res.is_ok());
+        assert!(!current_literals.is_empty());
     }
 }

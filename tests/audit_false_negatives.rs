@@ -460,7 +460,7 @@ fn audit_search_parity_gzip() {
     use flate2::read::GzDecoder;
     use flate2::write::GzEncoder;
     use flate2::Compression;
-    use std::io::Write;
+    use std::io::{Read, Write};
 
     let original = b"Test data for gzip search parity. PATTERN_TO_FIND_XYZ";
 

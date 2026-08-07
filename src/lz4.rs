@@ -231,13 +231,20 @@ const MAX_DECOMPRESSION_RATIO: usize = 250;
 ///
 /// A vector of [`CompressedBlock`] values in stream order.
 pub fn parse_lz4_blocks(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> {
+    if data.is_empty() {
+        return Err(ZiftError::InvalidData {
+            offset: 0,
+            reason: "empty input is not valid LZ4 data. Fix: provide non-empty LZ4 data"
+                .to_string(),
+        });
+    }
+
     let mut blocks = Vec::new();
     let mut offset = parse_frame_header(data)?;
-
+    let is_framed = data.len() >= 4 && data[..4] == LZ4_FRAME_MAGIC;
     let mut total_literals = 0usize;
 
     while offset < data.len() {
-        // Prevent DoS from too many blocks
         if blocks.len() >= MAX_BLOCKS_PER_STREAM {
             return Err(ZiftError::InvalidData {
                 offset,
@@ -246,7 +253,13 @@ pub fn parse_lz4_blocks(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> 
         }
 
         if offset.saturating_add(4) > data.len() {
-            break; // Incomplete block header
+            if offset == data.len() || !is_framed {
+                break;
+            }
+            return Err(ZiftError::InvalidData {
+                offset,
+                reason: "truncated LZ4 block header. Fix: use a complete LZ4 stream".to_string(),
+            });
         }
 
         // Read block header (compressed size)
@@ -464,6 +477,19 @@ mod tests {
         let blocks = parse_lz4_blocks(&data).unwrap();
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].literals(), b"A");
+    }
+
+    #[test]
+    fn test_parse_lz4_blocks_truncated_header_rejected() {
+        // Frame header followed by only 2 bytes (incomplete block header).
+        // Must return ZiftError::InvalidData rather than silently returning empty blocks.
+        let mut data = vec![0x04, 0x22, 0x4D, 0x18, 0x60, 0x40, 0x00];
+        data.extend_from_slice(&[0x01, 0x02]); // Truncated block header (needs 4 bytes)
+        let result = parse_lz4_blocks(&data);
+        assert!(
+            matches!(result, Err(ZiftError::InvalidData { .. })),
+            "incomplete 2-byte block header must return InvalidData"
+        );
     }
 
     #[test]
