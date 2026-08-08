@@ -25,62 +25,85 @@ const MAX_DECOMPRESSION_RATIO: usize = 250;
 ///
 /// Parsed blocks in frame order, each carrying any recoverable literals.
 pub fn extract_literals(data: &[u8]) -> Result<Vec<CompressedBlock>, ZiftError> {
+    if data.is_empty() {
+        return Err(ZiftError::InvalidData {
+            offset: 0,
+            reason: "empty zstd input. Fix: provide non-empty compressed data".to_string(),
+        });
+    }
+
     let mut blocks = Vec::new();
     let mut pos = 0usize;
     let mut total_literals = 0usize;
+    let mut frame_count = 0usize;
 
-    // Parse frame header. When the stream contains only skippable frames it ends
-    // cleanly with no standard frame, so there are no literal blocks to extract.
-    if !parse_frame_header(data, &mut pos)? {
-        return Ok(blocks);
-    }
-
-    // Note: header.dict_id indicates dictionary-compressed frames.
-    // Dictionary mode requires external dictionary for full decompression.
-    // Raw and RLE literals can still be extracted, but Huffman-compressed
-    // literals in treeless mode (type 3) will return empty.
-
-    // Parse blocks until last_block flag
-    loop {
-        let (block, is_last) = parse_block(data, &mut pos)?;
-
-        total_literals = total_literals.saturating_add(block.literals().len());
-        if total_literals > MAX_TOTAL_LITERALS {
-            return Err(ZiftError::BlockTooLarge {
-                size: total_literals,
-                max: MAX_TOTAL_LITERALS,
-            });
-        }
-
-        let max_allowed_literals = data
-            .len()
-            .saturating_mul(MAX_DECOMPRESSION_RATIO)
-            .max(1024 * 1024);
-        if total_literals > max_allowed_literals {
+    while pos < data.len() {
+        frame_count += 1;
+        if frame_count > 1000 {
             return Err(ZiftError::InvalidData {
                 offset: pos,
-                reason: format!("decompression ratio exceeded limit of {MAX_DECOMPRESSION_RATIO}. Fix: use a non-malicious Zstd stream or increase MAX_DECOMPRESSION_RATIO"),
+                reason: "too many Zstd frames (>1000). Fix: use a valid Zstd stream".to_string(),
             });
         }
 
-        blocks.push(block);
+        let header = match parse_frame_header(data, &mut pos)? {
+            Some(h) => h,
+            None => break,
+        };
 
-        if is_last {
-            break;
+        // Parse blocks until last_block flag
+        loop {
+            let (block, is_last) = parse_block(data, &mut pos)?;
+
+            total_literals = total_literals.saturating_add(block.literals().len());
+            if total_literals > MAX_TOTAL_LITERALS {
+                return Err(ZiftError::BlockTooLarge {
+                    size: total_literals,
+                    max: MAX_TOTAL_LITERALS,
+                });
+            }
+
+            let max_allowed_literals = data
+                .len()
+                .saturating_mul(MAX_DECOMPRESSION_RATIO)
+                .max(1024 * 1024);
+            if total_literals > max_allowed_literals {
+                return Err(ZiftError::InvalidData {
+                    offset: pos,
+                    reason: format!("decompression ratio exceeded limit of {MAX_DECOMPRESSION_RATIO}. Fix: use a non-malicious Zstd stream or increase MAX_DECOMPRESSION_RATIO"),
+                });
+            }
+
+            blocks.push(block);
+
+            if is_last {
+                break;
+            }
+
+            // Safety: prevent infinite loop on malformed data
+            if blocks.len() >= 100_000 {
+                return Err(ZiftError::InvalidData {
+                    offset: pos,
+                    reason: "too many blocks (>100K), likely malformed. Fix: use a valid Zstd stream"
+                        .to_string(),
+                });
+            }
         }
 
-        // Safety: prevent infinite loop on malformed data
-        if blocks.len() >= 100_000 {
-            return Err(ZiftError::InvalidData {
-                offset: pos,
-                reason: "too many blocks (>100K), likely malformed. Fix: use a valid Zstd stream"
-                    .to_string(),
-            });
+        if header.content_checksum {
+            if pos + 4 > data.len() {
+                return Err(ZiftError::InvalidData {
+                    offset: pos,
+                    reason: "truncated frame content checksum. Fix: use a complete Zstd stream".to_string(),
+                });
+            }
+            pos += 4;
         }
     }
 
     Ok(blocks)
 }
+
 
 pub(crate) fn parse_block(
     data: &[u8],
@@ -171,4 +194,43 @@ pub(crate) fn parse_block(
 
     *pos += stream_data_size;
     Ok((block, last_block))
+}
+#[cfg(test)]
+mod multi_frame_tests {
+    use super::*;
+
+    #[test]
+    fn test_zstd_multi_frame_extraction() {
+        // Two raw blocks concatenated:
+        // Frame 1: Magic (4B), Header (1B desc=0x00, 1B window=0x58), Block (3B header: last=1, raw, len=4), Data "ABCD"
+        // Frame 2: Magic (4B), Header (1B desc=0x00, 1B window=0x58), Block (3B header: last=1, raw, len=4), Data "EFGH"
+        let stream = vec![
+            0x28, 0xb5, 0x2f, 0xfd, 0x00, 0x58, 0x21, 0x00, 0x00, b'A', b'B', b'C', b'D',
+            0x28, 0xb5, 0x2f, 0xfd, 0x00, 0x58, 0x21, 0x00, 0x00, b'E', b'F', b'G', b'H',
+        ];
+        let blocks = extract_literals(&stream).expect("multi-frame zstd extraction failed");
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].literals(), b"ABCD");
+        assert_eq!(blocks[1].literals(), b"EFGH");
+    }
+
+    #[test]
+    fn test_zstd_content_checksum_advances_pos() {
+        // Frame with content_checksum set (desc = 0x04)
+        let stream = vec![
+            0x28, 0xb5, 0x2f, 0xfd, 0x04, 0x58, 0x21, 0x00, 0x00, b'A', b'B', b'C', b'D',
+            0x11, 0x22, 0x33, 0x44, // 4-byte checksum
+        ];
+        let blocks = extract_literals(&stream).expect("zstd extraction with checksum failed");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].literals(), b"ABCD");
+    }
+
+    #[test]
+    fn test_zstd_reserved_bit_rejected() {
+        // Frame with reserved bit set (desc = 0x08)
+        let stream = vec![0x28, 0xb5, 0x2f, 0xfd, 0x08, 0x58];
+        let err = extract_literals(&stream).unwrap_err();
+        assert!(matches!(err, ZiftError::InvalidData { .. }));
+    }
 }

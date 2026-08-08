@@ -28,24 +28,29 @@ impl BlockType {
     }
 }
 
-// Frame header information (currently just tracks position after header)
-pub(crate) type FrameHeader = ();
+// Frame header information
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FrameHeader {
+    pub(crate) content_checksum: bool,
+}
 
 /// Parses leading skippable frames and, if present, the standard frame header.
 ///
-/// Returns `Ok(true)` when a standard Zstd frame header was parsed (block data
-/// follows at `*pos`), or `Ok(false)` when the stream consisted solely of
-/// skippable frames and ended cleanly (no standard frame, so no literal blocks).
-pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<bool, ZiftError> {
+/// Returns `Ok(Some(FrameHeader))` when a standard Zstd frame header was parsed,
+/// or `Ok(None)` when the stream consisted solely of skippable frames or ended cleanly.
+pub(crate) fn parse_frame_header(
+    data: &[u8],
+    pos: &mut usize,
+) -> Result<Option<FrameHeader>, ZiftError> {
     const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
+    let start_pos = *pos;
     if data.len() < 4 {
         return Err(ZiftError::InvalidData {
             offset: 0,
             reason: "data too short for frame header. Fix: use a complete Zstd stream".to_string(),
         });
     }
-
     // Handle skippable frames (up to 3 as per Zstd spec)
     let mut iterations = 0;
     loop {
@@ -61,9 +66,12 @@ pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<bool, Z
         // the final skippable frame lands `pos` exactly at the end, which is a
         // valid, complete stream with no standard frame to follow.
         if *pos == data.len() {
-            return Ok(false);
+            return Ok(None);
         }
         if *pos + 4 > data.len() {
+            if start_pos > 0 {
+                return Ok(None);
+            }
             return Err(ZiftError::InvalidData {
                 offset: *pos,
                 reason:
@@ -74,8 +82,8 @@ pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<bool, Z
 
         // Check for standard frame
         if data[*pos..*pos + 4] == ZSTD_MAGIC {
-            parse_standard_frame_header(data, pos)?;
-            return Ok(true);
+            let header = parse_standard_frame_header(data, pos)?;
+            return Ok(Some(header));
         }
 
         // Check for skippable frame (magic 0x184D2A50-0x184D2A57)
@@ -118,6 +126,10 @@ pub(crate) fn parse_frame_header(data: &[u8], pos: &mut usize) -> Result<bool, Z
             continue; // Try again after skipping
         }
 
+        if start_pos > 0 {
+            return Ok(None);
+        }
+
         return Err(ZiftError::InvalidData {
             offset: *pos,
             reason: "invalid Zstd magic number. Fix: use a valid Zstd stream".to_string(),
@@ -145,6 +157,14 @@ pub(crate) fn parse_standard_frame_header(
 
     let fcs_id = (fh_desc >> 6) & 0x03;
     let single_segment = (fh_desc >> 5) & 0x01;
+    let content_checksum_flag = (fh_desc & 0x04) != 0;
+    let reserved_bit = (fh_desc & 0x08) != 0;
+    if reserved_bit {
+        return Err(ZiftError::InvalidData {
+            offset: *pos - 1,
+            reason: "reserved bit set in Zstd frame header descriptor. Fix: use a compliant Zstd stream".to_string(),
+        });
+    }
     let dict_id_flag = fh_desc & 0x03;
 
     // Parse window descriptor if not single segment
@@ -235,5 +255,7 @@ pub(crate) fn parse_standard_frame_header(
     }
     *pos += fcs_size;
 
-    Ok(())
+    Ok(FrameHeader {
+        content_checksum: content_checksum_flag,
+    })
 }
