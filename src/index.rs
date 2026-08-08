@@ -38,7 +38,7 @@ impl CompressedIndex {
             bloom.may_contain(pattern)
         } else {
             // For longer patterns, check all 4-byte windows
-            pattern.windows(4).any(|window| bloom.may_contain(window))
+            pattern.windows(4).all(|window| bloom.may_contain(window))
         }
     }
 
@@ -266,5 +266,19 @@ mod tests {
         // Since "ABCD" wasn't inserted as a 4-byte window, `may_contain` returns false.
         // This proves the documented false negative risk.
         assert!(!CompressedIndex::pattern_might_contain(&bloom, b"ABCD"));
+    }
+
+    #[test]
+    fn test_pattern_might_contain_all_windows_required() {
+        let mut bloom = BloomFilter::new(100, 0.01);
+        // Insert 4-byte windows for "ABCDEF" -> "ABCD", "BCDE", "CDEF"
+        bloom.insert(b"ABCD");
+        bloom.insert(b"BCDE");
+        bloom.insert(b"CDEF");
+
+        assert!(CompressedIndex::pattern_might_contain(&bloom, b"ABCDEF"));
+
+        // "ABCXEF" has windows "ABCX", "BCXE", "CXEF" - none inserted
+        assert!(!CompressedIndex::pattern_might_contain(&bloom, b"ABCXEF"));
     }
 }

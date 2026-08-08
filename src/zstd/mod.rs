@@ -46,9 +46,9 @@ mod tests {
         data.extend_from_slice(b"skip");
         let mut pos = 0;
         // Previously this returned a "truncated frame header" error.
-        let has_standard_frame =
+        let frame_header =
             parse_frame_header(&data, &mut pos).expect("skippable-only stream is valid");
-        assert!(!has_standard_frame);
+        assert!(frame_header.is_none());
         assert_eq!(pos, data.len());
     }
 

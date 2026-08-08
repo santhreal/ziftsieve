@@ -51,7 +51,11 @@ impl BloomFilter {
     pub fn new(expected_items: usize, false_positive_rate: f64) -> Self {
         // Clamp inputs to valid ranges instead of panicking
         let n = expected_items.max(1) as f64;
-        let p = false_positive_rate.clamp(0.0001, 0.9999);
+        let p = if false_positive_rate.is_nan() {
+            0.01
+        } else {
+            false_positive_rate.clamp(0.0001, 0.9999)
+        };
 
         // Optimal number of bits: m = -n * ln(p) / ln(2)^2
         let m_f64 = (-n * p.ln() / (2.0_f64.ln().powi(2))).ceil();
@@ -291,5 +295,17 @@ impl BloomFilter {
             num_hashes: num_hashes.clamp(1, 32),
             num_bits,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bloom_filter_new_handles_nan_false_positive_rate() {
+        let bf = BloomFilter::new(100, f64::NAN);
+        assert_eq!(bf.num_hashes, 7);
+        assert!(bf.num_bits >= 64);
     }
 }
